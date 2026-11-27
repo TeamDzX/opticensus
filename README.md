@@ -53,6 +53,8 @@ never raises a macOS permission prompt.
 ## WorkFlow as the console
 
     opticensus workflow connect [--bridge DIR]   # link once; WorkFlow's Agent Bridge must be on
+    opticensus workflow connect --team [--project NAME] [--machine NAME]
+    opticensus workflow connect --no-document    # skip the register document
     opticensus workflow status | sync | disconnect
 
 Once linked, every item that needs a person becomes a task in an
@@ -72,6 +74,27 @@ an allowed item that changes gets a new task. Decisions made with `allow` and
 `deny` here close their task too. It goes through WorkFlow's Agent Bridge
 folder only (command files in, receipts and a snapshot out), so WorkFlow
 needs no add-on and has to be running for tasks to appear.
+
+Around the tasks:
+
+- **Set up in one step.** The first sync creates the project (if it is not
+  there) and two smart lists: *OptiCensus: needs a decision* and
+  *OptiCensus: unexpected*.
+- **Urgent items in My Day.** A model server open to the network, or
+  something you refused that is back, is high priority, due today and in My
+  Day.
+- **Reviews before an allowance ends.** For `allow until 2027-03-31`, a
+  *Review* task appears a week before, due on that date, with *Keep
+  allowing* and *Refuse* cards (or reply `allow until` a new date).
+- **The register as a document.** *OptiCensus AI register.csv* sits in the
+  project's documents, and gets a new version whenever an item or a decision
+  changes: the answer for a client or an auditor, with its history.
+- **Several Macs, one console.** Share the project in WorkFlow with your
+  team. On each Mac (WorkFlow with its Agent Bridge on, and OptiCensus), run
+  `opticensus workflow connect --team --project "<the shared project>"`.
+  Every task and card names its Mac, each Mac files its own register
+  document, and anyone in the project can decide. A decision applies to that
+  Mac only.
 
 A card closes its task by itself. After a typed reply, WorkFlow holds
 OptiCensus's "mark done" for your OK when its Ask-before setting says so; to

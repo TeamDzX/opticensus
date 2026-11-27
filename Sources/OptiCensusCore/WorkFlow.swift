@@ -6,6 +6,11 @@ import Foundation
 /// Refuse: Apply on one is the decision, and closes the task. A reply that
 /// starts with "allow" or "deny" works too.
 ///
+/// Around that: a one-time setup (the project and two smart lists), urgent
+/// items in My Day, a review task before a time-limited allowance ends, the
+/// register kept as a versioned document in the project, and a team mode in
+/// which several Macs file into one shared project, each task naming its Mac.
+///
 /// It talks to WorkFlow only through the app's Agent Bridge folder: command
 /// files into `inbox/`, receipts from `outbox/`, and the app's own
 /// `snapshot.json` for the replies. WorkFlow needs no change and must be
@@ -16,6 +21,9 @@ public enum WorkFlow {
     /// WorkFlow drops a proposal card after seven days; a fresh pair goes up then.
     static let cardLifetime: TimeInterval = 7 * 86_400
     static let appliedPrefix = "✓ Applied "
+    /// A review task appears this long before a time-limited allowance ends.
+    static let reviewAhead: TimeInterval = 7 * 86_400
+    static let smartLists = ["OptiCensus: needs a decision", "OptiCensus: unexpected"]
 
     /// What this Mac remembers about the link, kept as `workflow.json` in the store.
     public struct Link: Codable {
@@ -36,6 +44,23 @@ public enum WorkFlow {
         public var pending: [String: String] = [:]   // command id -> item key, until the receipt names the task
         public var pendingCards: [String: String]?   // command id -> "allow|key" or "deny|key", until the receipt gives the code
         public var connectedAt: Date
+        /// The Mac's name, shown on every task in team mode.
+        public var machine: String?
+        /// Several Macs file into one (shared) project.
+        public var team: Bool?
+        public var setupDone: Bool?
+        /// Item key -> the allowance end date a review task was sent for.
+        public var reviewed: [String: Date]?
+        /// The register document: off when false; what was last filed; the command that made it.
+        public var registerDoc: Bool?
+        public var registerHash: String?
+        public var registerDocCreated: Bool?
+        public var pendingDoc: String?
+
+        public var isTeam: Bool { team == true }
+        public var registerDocName: String {
+            "\(Product.name) AI register" + (isTeam ? " (\(machine ?? "this Mac"))" : "") + ".csv"
+        }
 
         public init(bridge: String, connectedAt: Date) {
             self.bridge = bridge; self.connectedAt = connectedAt
@@ -59,13 +84,17 @@ public enum WorkFlow {
     }
 
     public struct Outcome {
-        public var created = 0, carded = 0, commented = 0, closed = 0, waiting = 0
+        public var created = 0, carded = 0, commented = 0, closed = 0, waiting = 0, reviews = 0, flagged = 0
+        public var setUp = false, registerFiled = false
         public var decisions: [Event] = []
         public var problems: [String] = []
 
         public var summary: String {
             var parts: [String] = []
-            if created > 0 { parts.append("\(created) task\(created == 1 ? "" : "s") sent") }
+            if setUp { parts.append("project and smart lists set up") }
+            if created > 0 { parts.append("\(created) task\(created == 1 ? "" : "s") sent" + (reviews > 0 ? " (\(reviews) to review an allowance)" : "")) }
+            if flagged > 0 { parts.append("\(flagged) put in My Day") }
+            if registerFiled { parts.append("register document updated") }
             if carded > 0 { parts.append("Allow and Refuse cards on \(carded) task\(carded == 1 ? "" : "s")") }
             if !decisions.isEmpty { parts.append("\(decisions.count) decision\(decisions.count == 1 ? "" : "s") taken from WorkFlow") }
             if commented > 0 { parts.append("\(commented) comment\(commented == 1 ? "" : "s") posted") }
@@ -93,6 +122,18 @@ public enum WorkFlow {
             if FileManager.default.fileExists(atPath: url.appendingPathComponent("inbox").path) { return url }
         }
         return nil
+    }
+
+    /// This Mac's name as people know it ("Alex's MacBook Pro").
+    public static func machineName() -> String {
+        Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+    }
+
+    static func day(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
     }
 
     // MARK: the sync
@@ -151,11 +192,37 @@ public enum WorkFlow {
             t.cards = (t.cards ?? [:]).merging([code: parts[0]]) { _, new in new }
             link.tasks[parts[1]] = t
         }
+        if let docID = link.pendingDoc,
+           let d = try? Data(contentsOf: outbox.appendingPathComponent("\(docID).json")),
+           let r = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+            link.pendingDoc = nil
+            if r["status"] as? String != "applied" {
+                // Not filed (or the document was deleted): file it afresh next time.
+                link.registerDocCreated = false; link.registerHash = nil
+                out.problems.append("WorkFlow did not take the register document: \(r["message"] as? String ?? "no reason given")")
+            }
+        }
         out.waiting = link.pending.count
 
-        // 2. The person's replies, from WorkFlow's snapshot.
         let snapshot = (try? Data(contentsOf: bridge.appendingPathComponent("snapshot.json")))
             .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+
+        // 1b. Once: the project, and smart lists for what needs a decision and what is unexpected.
+        if link.setupDone != true {
+            let projects = ((snapshot?["projects"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+            if !projects.contains(where: { $0.caseInsensitiveCompare(link.project) == .orderedSame }) {
+                _ = send("create_project", ["name": link.project, "colorHex": "#EB4034",
+                                            "projectDescription": "Every AI on " + (link.isTeam ? "our Macs" : "this Mac")
+                                                + " that needs a decision. Filed by \(Product.name); tap Apply on Allow or Refuse."])
+            }
+            _ = send("create_smart_list", ["name": smartLists[0], "colorHex": "#EB4034",
+                                           "filters": ["project": link.project, "status": "To Do"]])
+            _ = send("create_smart_list", ["name": smartLists[1], "colorHex": "#EB4034",
+                                           "filters": ["project": link.project, "priority": "High"]])
+            link.setupDone = true; out.setUp = true
+        }
+
+        // 2. The person's replies, from WorkFlow's snapshot.
         let tasks = Dictionary(((snapshot?["tasks"] as? [[String: Any]]) ?? []).compactMap { t in
             (t["id"] as? String).map { ($0, t) }
         }, uniquingKeysWith: { a, _ in a })
@@ -221,9 +288,13 @@ public enum WorkFlow {
         for key in link.tasks.keys.sorted() {
             guard var t = link.tasks[key], !t.closed, !carding.contains(key), let item = register.items[key] else { continue }
             if let at = t.cardsAt, now.timeIntervalSince(at) < cardLifetime { continue }
+            let onMac = link.isTeam ? " on \(link.machine ?? "this Mac")" : ""
+            let reviewing = item.verdict?.state == .allowed && item.verdict?.until != nil
             for (which, summary, reason) in [
-                ("allow", "Allow \(item.name)", "It stays on the allowed list. \(Product.name) asks again only if it changes."),
-                ("deny", "Refuse \(item.name)", "It is marked not allowed, and flagged at every scan while it is still here."),
+                ("allow", reviewing ? "Keep allowing \(item.name)\(onMac)" : "Allow \(item.name)\(onMac)",
+                 reviewing ? "Allowed with no end date. To set a new end date instead, reply \"allow until YYYY-MM-DD\"."
+                           : "It stays on the allowed list. \(Product.name) asks again only if it changes."),
+                ("deny", "Refuse \(item.name)\(onMac)", "It is marked not allowed, and flagged at every scan while it is still here."),
             ] {
                 let id = send("propose", ["taskID": t.taskID, "text": summary, "reason": reason,
                                           "proposal": ["op": "complete_task", "text": "\(summary): decided in WorkFlow."]])
@@ -239,22 +310,44 @@ public enum WorkFlow {
             guard let t = link.tasks[e.key], !t.closed else { continue }
             _ = send("add_comment", ["taskID": t.taskID, "text": "\(e.type.rawValue.capitalized): \(e.note)"])
             out.commented += 1
+            // Open to the network, or refused and back: today's business.
+            if e.type == .exposed || e.type == .back {
+                _ = send("update_task", ["taskID": t.taskID, "priority": "High", "isInMyDay": true, "dueDate": day(now)])
+                out.flagged += 1
+            }
         }
 
         // 4. A task for everything that needs a person and has none open.
         let waitingKeys = Set(link.pending.values)
         for item in register.sorted() {
             let status = item.status(now: now)
-            guard item.present, status == .needsDecision || status == .unexpected,
-                  !waitingKeys.contains(item.key) else { continue }
-            if let t = link.tasks[item.key] {
-                if !t.closed { continue }
-                // Closed before: only a real change, or a decision since, reopens it.
-                if t.fingerprint == item.fingerprint && t.verdictAt == item.verdict?.at { continue }
+            guard item.present, !waitingKeys.contains(item.key) else { continue }
+            let open = link.tasks[item.key].map { !$0.closed } ?? false
+            // A time-limited allowance about to end (or ended): one review task per end date.
+            var review: Date?
+            if let v = item.verdict, v.state == .allowed, let until = v.until,
+               now >= until.addingTimeInterval(-reviewAhead), link.reviewed?[item.key] != until, !open,
+               status == .allowed || status == .needsDecision {
+                review = until
             }
-            var fields: [String: Any] = ["title": title(item, now: now), "project": link.project,
-                                         "notes": notes(item, now: now), "tags": [tag]]
-            if status == .unexpected { fields["priority"] = "High" }
+            if review == nil {
+                guard status == .needsDecision || status == .unexpected, !open else { continue }
+                // Closed before: only a real change, or a decision since, reopens it.
+                if let t = link.tasks[item.key], t.fingerprint == item.fingerprint && t.verdictAt == item.verdict?.at { continue }
+            }
+            let mac = link.isTeam ? link.machine ?? machineName() : nil
+            var fields: [String: Any] = ["title": title(item, now: now, machine: mac), "project": link.project,
+                                         "notes": notes(item, now: now, machine: mac), "tags": [tag] + (mac.map { [$0] } ?? [])]
+            if let review {
+                fields["title"] = "Review: \(item.name) (allowed until \(Format.day(review)))" + (mac.map { " · \($0)" } ?? "")
+                fields["dueDate"] = day(review)
+                link.reviewed = (link.reviewed ?? [:]).merging([item.key: review]) { _, new in new }
+                out.reviews += 1
+            }
+            if status == .unexpected {
+                fields["priority"] = "High"; fields["isInMyDay"] = true; fields["dueDate"] = day(now)
+                out.flagged += 1
+            }
             let id = send("create_task", fields)
             link.pending[id] = item.key
             link.tasks[item.key] = nil
@@ -262,6 +355,35 @@ public enum WorkFlow {
         }
         out.waiting = link.pending.count - out.created
         if out.waiting < 0 { out.waiting = 0 }
+
+        // 5. The register as a document in the project, a new version whenever a decision or an item changes.
+        if link.registerDoc != false, link.pendingDoc == nil {
+            let state = register.sorted().map { i in
+                [i.key, i.status(now: now).rawValue, i.verdict?.state.rawValue ?? "", i.verdict?.until.map(Format.day) ?? "",
+                 i.verdict?.reason ?? "", i.fingerprint, i.present ? "1" : "0"].joined(separator: "|")
+            }
+            let hash = fingerprint(state)
+            if hash != link.registerHash {
+                let attachments = bridge.appendingPathComponent("attachments")
+                try? FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: true)
+                let staged = "opticensus-register-\(batch).csv"
+                if (try? Data(Report.csv(register, now: now).utf8).write(to: attachments.appendingPathComponent(staged))) != nil {
+                    let name = link.registerDocName
+                    if link.registerDocCreated == true {
+                        link.pendingDoc = send("add_document_version", ["matchTitle": name, "fileName": staged, "displayName": name,
+                                                                       "versionComment": Report.counts(register, now: now)])
+                    } else {
+                        link.pendingDoc = send("attach_file", ["project": link.project, "fileName": staged, "displayName": name,
+                                                               "docType": "Register",
+                                                               "docSummary": "Every AI on " + (link.isTeam ? (link.machine ?? "this Mac") : "this Mac")
+                                                                   + ", with the decision on each. \(Product.name) adds a version whenever something changes."])
+                        link.registerDocCreated = true
+                    }
+                    link.registerHash = hash
+                    out.registerFiled = true
+                }
+            }
+        }
         return out
     }
 
@@ -276,7 +398,7 @@ public enum WorkFlow {
 
     // MARK: wording
 
-    static func title(_ item: Item, now: Date) -> String {
+    static func title(_ item: Item, now: Date, machine: String? = nil) -> String {
         let what: String
         switch item.kind {
         case .app: what = "app"
@@ -292,11 +414,16 @@ public enum WorkFlow {
         case .hook: what = "hooks"
         }
         let verb = item.status(now: now) == .unexpected ? "Check" : "Decide"
-        return "\(verb): \(item.name) (\(what))"
+        return "\(verb): \(item.name) (\(what))" + (machine.map { " · \($0)" } ?? "")
     }
 
-    static func notes(_ item: Item, now: Date) -> String {
+    static func notes(_ item: Item, now: Date, machine: String? = nil) -> String {
         var lines = [item.why(now: now).prefix(1).uppercased() + item.why(now: now).dropFirst() + ".", ""]
+        if let machine { lines.insert("Mac: \(machine)", at: 0) }
+        if let v = item.verdict, v.state == .allowed, let until = v.until {
+            lines.insert("Allowed by \(v.by) on \(Format.day(v.at)) until \(Format.day(until))"
+                         + (v.reason.isEmpty ? "." : ": \(v.reason)."), at: 0)
+        }
         for k in item.detail.keys.sorted() { lines.append("\(k): \(item.detail[k]!)") }
         lines += ["first seen: \(Format.day(item.firstSeen))", "id: \(item.id)", "",
                   "To decide, tap Apply on the Allow or the Refuse card below.",

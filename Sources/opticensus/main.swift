@@ -16,9 +16,11 @@ allowed it, and what changed since you last looked.
   \(Product.command) export [--csv] [-o FILE]      The whole register, JSON unless --csv
   \(Product.command) schedule install|status|uninstall [--every MINUTES]
                                        A background scan (hourly unless told otherwise)
-  \(Product.command) workflow connect|status|sync|disconnect [--bridge DIR]
-                                       Use the WorkFlow app as the console: a task for each
-                                       item that needs you; reply "allow" or "deny" there
+  \(Product.command) workflow connect [--team] [--project NAME] [--machine NAME] [--no-document] [--bridge DIR]
+  \(Product.command) workflow status|sync|disconnect
+                                       Use the WorkFlow app as the console: a task with Allow and
+                                       Refuse cards for each item that needs you. --team: several
+                                       Macs file into one shared project, each task naming its Mac
   \(Product.command) reads                         What this tool reads, and what it never keeps
 
 ITEM is the six-character id from `show`, or part of a name or key.
@@ -143,6 +145,10 @@ func run() throws {
     case "workflow":
         guard fixture == nil else { throw Fail(message: "A fixture cannot be linked to WorkFlow.") }
         let given = try option("--bridge")
+        let project = try option("--project")
+        let machine = try option("--machine")
+        let team = flag("--team")
+        let noDocument = flag("--no-document")
         switch args.first ?? "status" {
         case "connect":
             guard let bridge = WorkFlow.findBridge(given: given) else {
@@ -153,8 +159,13 @@ func run() throws {
             }
             var link = WorkFlow.Link.load(store) ?? WorkFlow.Link(bridge: bridge.path, connectedAt: now)
             link.bridge = bridge.path
+            if let project, project != link.project { link.project = project; link.setupDone = nil; link.registerDocCreated = nil; link.registerHash = nil }
+            if team { link.team = true }
+            if let machine { link.machine = machine }
+            if link.machine == nil { link.machine = WorkFlow.machineName() }
+            if noDocument { link.registerDoc = false }
             try link.save(store)
-            print("Linked to WorkFlow through \(bridge.path).")
+            print("Linked to WorkFlow through \(bridge.path), project \"\(link.project)\"" + (link.isTeam ? ", as \"\(link.machine!)\" (team mode)." : "."))
             print("Each item that needs you becomes a task in the \"\(link.project)\" project. Reply \"allow\" or \"deny\" on it,")
             print("with a reason if you like; the next scan records it. WorkFlow has to be running for tasks to appear.")
             print("If WorkFlow asks you to OK each task it closes, set Settings → Agent Bridge → Briefs, Check-ins &")
@@ -169,6 +180,8 @@ func run() throws {
             guard let link = WorkFlow.Link.load(store) else { print("Not linked to WorkFlow."); return }
             let open = link.tasks.values.filter { !$0.closed }.count
             print("Linked to WorkFlow since \(Format.day(link.connectedAt)) through \(link.bridge)")
+            print("Project \"\(link.project)\"" + (link.isTeam ? ", team mode as \"\(link.machine ?? "this Mac")\"" : "")
+                  + "; register document " + (link.registerDoc == false ? "off" : "\"\(link.registerDocName)\""))
             print("\(open) open task\(open == 1 ? "" : "s") in \"\(link.project)\", \(link.pending.count) waiting for WorkFlow to pick up")
         case "disconnect":
             guard WorkFlow.Link.load(store) != nil else { print("Not linked to WorkFlow."); return }

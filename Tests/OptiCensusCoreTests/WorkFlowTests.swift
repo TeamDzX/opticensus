@@ -16,6 +16,7 @@ final class WorkFlowTests: XCTestCase {
             try FileManager.default.createDirectory(at: bridge.appendingPathComponent(d), withIntermediateDirectories: true)
         }
         link = WorkFlow.Link(bridge: bridge.path, connectedAt: now)
+        link.setupDone = true; link.registerDoc = false      // the older tests look at tasks only
         let found = [
             Found(kind: .mcp, key: "mcp:claude-code:user:files", name: "files", detail: ["command": "npx"], fingerprint: "f1"),
             Found(kind: .port, key: "port:11434:ollama", name: "Ollama", detail: ["reach": "the network"],
@@ -197,5 +198,114 @@ final class WorkFlowTests: XCTestCase {
         let again = sync(later: 240)
         XCTAssertEqual(again.created, 1)
         XCTAssertEqual(try inbox().last?["title"] as? String, "Decide: files (MCP server)")
+    }
+
+    // MARK: setup, My Day, reviews, the register document, team mode
+
+    func ops() throws -> [String] { try inbox().map { $0["op"] as! String } }
+
+    func testSetupHappensOnce() throws {
+        link.setupDone = nil
+        try snapshot([])
+        _ = sync()
+        let sent = try inbox()
+        XCTAssertEqual(Array(sent.map { $0["op"] as! String }.prefix(3)), ["create_project", "create_smart_list", "create_smart_list"])
+        XCTAssertEqual(sent[1]["name"] as? String, "OptiCensus: needs a decision")
+        XCTAssertEqual((sent[2]["filters"] as? [String: Any])?["priority"] as? String, "High")
+        try workflowApplies()
+        _ = sync(later: 5)
+        XCTAssertFalse(try ops().contains("create_smart_list"))
+    }
+
+    func testAnExistingProjectIsNotCreatedAgain() throws {
+        link.setupDone = nil
+        try JSONSerialization.data(withJSONObject: ["projects": [["name": "OptiCensus"]], "tasks": []])
+            .write(to: bridge.appendingPathComponent("snapshot.json"))
+        _ = sync()
+        XCTAssertFalse(try ops().contains("create_project"))
+    }
+
+    func testUnexpectedItemsGoToMyDay() throws {
+        _ = sync()
+        let exposed = try XCTUnwrap(try inbox().first { ($0["title"] as! String).contains("Ollama") })
+        XCTAssertEqual(exposed["isInMyDay"] as? Bool, true)
+        XCTAssertEqual(exposed["dueDate"] as? String, WorkFlow.day(now))
+        let plain = try XCTUnwrap(try inbox().first { ($0["title"] as! String).contains("files") })
+        XCTAssertNil(plain["isInMyDay"])
+
+        // A model server that opens up while its task is open: flagged for today.
+        try workflowApplies(); _ = sync(later: 5); try workflowApplies()
+        let back = Event(at: now, type: .exposed, key: "mcp:claude-code:user:files", kind: .mcp, name: "files", note: "listening beyond this Mac")
+        _ = sync([back], later: 10)
+        let update = try XCTUnwrap(try inbox().first { $0["op"] as? String == "update_task" })
+        XCTAssertEqual(update["isInMyDay"] as? Bool, true)
+        XCTAssertEqual(update["priority"] as? String, "High")
+    }
+
+    func testAReviewTaskComesAWeekBeforeAnAllowanceEnds() throws {
+        let key = "mcp:claude-code:user:files"
+        sync(); try workflowApplies(); _ = sync(); try workflowApplies()
+        let until = now.addingTimeInterval(20 * 86_400)
+        try snapshot([["id": link.tasks[key]!.taskID, "status": "To Do", "comments": [
+            ["id": "c1", "author": "Me", "text": "allow until \(WorkFlow.day(until)), trial"]]]])
+        _ = sync(later: 60); try workflowApplies()
+        XCTAssertEqual(sync(later: 5 * 86_400).created, 0, "fifteen days to go: nothing yet")
+
+        let due = sync(later: 14 * 86_400)
+        XCTAssertEqual(due.created, 1); XCTAssertEqual(due.reviews, 1)
+        let task = try XCTUnwrap(try inbox().first { $0["op"] as? String == "create_task" })
+        XCTAssertTrue((task["title"] as! String).hasPrefix("Review: files (allowed until "))
+        XCTAssertEqual(task["dueDate"] as? String, WorkFlow.day(Format.parseDay(WorkFlow.day(until), endOfDay: true)!))
+        XCTAssertTrue((task["notes"] as! String).contains("trial"))
+        try workflowApplies()
+        _ = sync(later: 14 * 86_400 + 10)
+        let cards = try inbox().filter { $0["op"] as? String == "propose" }.compactMap { $0["text"] as? String }
+        XCTAssertTrue(cards.contains("Keep allowing files"))
+        try workflowApplies()
+        XCTAssertEqual(sync(later: 30 * 86_400).created, 0, "one review per end date, even once it has ended")
+    }
+
+    func testTheRegisterIsKeptAsAVersionedDocument() throws {
+        link.registerDoc = nil
+        _ = sync()
+        let file = try XCTUnwrap(try inbox().first { $0["op"] as? String == "attach_file" })
+        XCTAssertEqual(file["displayName"] as? String, "OptiCensus AI register.csv")
+        XCTAssertEqual(file["project"] as? String, "OptiCensus")
+        let staged = bridge.appendingPathComponent("attachments/\(file["fileName"] as! String)")
+        XCTAssertTrue(try String(contentsOf: staged, encoding: .utf8).hasPrefix("id,status,kind,name"))
+        try workflowApplies()
+        _ = sync(later: 5)
+        XCTAssertFalse(try ops().contains("add_document_version"), "nothing changed, no new version")
+        try workflowApplies()
+
+        _ = Engine.decide(.denied, keys: ["port:11434:ollama"], until: nil, by: "tester", reason: "", now: now, register: &register)
+        _ = sync(later: 10)
+        let version = try XCTUnwrap(try inbox().first { $0["op"] as? String == "add_document_version" })
+        XCTAssertEqual(version["matchTitle"] as? String, "OptiCensus AI register.csv")
+        XCTAssertTrue((version["versionComment"] as! String).contains("not allowed"))
+    }
+
+    func testADocumentWorkFlowRefusedIsFiledAgain() throws {
+        link.registerDoc = nil
+        _ = sync()
+        let id = try XCTUnwrap(try inbox().first { $0["op"] as? String == "attach_file" })["id"] as! String
+        try JSONSerialization.data(withJSONObject: ["id": id, "status": "failed", "message": "No project named “OptiCensus”."])
+            .write(to: bridge.appendingPathComponent("outbox/\(id).json"))
+        let out = sync(later: 5)
+        XCTAssertTrue(out.problems.contains { $0.contains("register document") })
+        XCTAssertEqual(try inbox().filter { $0["op"] as? String == "attach_file" }.count, 2, "filed again")
+    }
+
+    func testTeamModeNamesTheMacEverywhere() throws {
+        link.team = true; link.machine = "Studio Mac"; link.registerDoc = nil
+        _ = sync()
+        let task = try XCTUnwrap(try inbox().first { ($0["title"] as? String)?.contains("files") == true })
+        XCTAssertEqual(task["title"] as? String, "Decide: files (MCP server) · Studio Mac")
+        XCTAssertEqual(task["tags"] as? [String], ["OptiCensus", "Studio Mac"])
+        XCTAssertTrue((task["notes"] as! String).hasPrefix("Mac: Studio Mac"))
+        XCTAssertEqual(try inbox().first { $0["op"] as? String == "attach_file" }?["displayName"] as? String,
+                       "OptiCensus AI register (Studio Mac).csv")
+        try workflowApplies(); _ = sync(later: 5)
+        XCTAssertTrue(try inbox().contains { $0["text"] as? String == "Allow files on Studio Mac" })
     }
 }

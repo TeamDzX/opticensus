@@ -102,6 +102,9 @@ p + p { margin-top: 0.9em; }
 .tile { background: #fff; border: 1px solid var(--line); border-radius: 0.9rem; padding: 1.35rem; }
 .tile p, .tile ul { color: var(--muted); font-size: 0.98rem; margin-top: 0.5rem; }
 .tile ul { padding-left: 1.1rem; margin-bottom: 0; }
+.adds { color: var(--muted); margin: 1.1rem 0 0; padding-left: 1.1rem; }
+.adds li + li { margin-top: 0.45rem; }
+.adds strong { color: var(--text); }
 .tile li + li { margin-top: 0.35rem; }
 
 .events { margin: 2.5rem 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
@@ -264,7 +267,14 @@ footer a { color: #fff; }
         <h2>WorkFlow is its console</h2>
         <p>Link OptiCensus to <a href="https://www.opticell-limited.com/workflow" target="_top">WorkFlow</a>, our task manager for Mac, iPhone and iPad, and every entry that needs you becomes a task in an OptiCensus project.</p>
         <p>Answer it wherever you are. Each task has an <strong>Allow</strong> and a <strong>Refuse</strong> card: tap Apply on one and the task closes. Or reply with a reason, like "allow, we use it for client work". The next scan records your decision and says so on the task. If something you allowed changes, a new task asks again. If a model server opens up to the network, its task is marked high priority.</p>
-        <p class="fine">One command links them: <code>opticensus workflow connect</code>. It uses WorkFlow's Agent Bridge, so there is nothing else to install.</p>
+        <ul class="adds">
+          <li><strong>Set up in one step.</strong> The project and two smart lists, <em>needs a decision</em> and <em>unexpected</em>.</li>
+          <li><strong>Urgent items in My Day.</strong> A model server open to the network, or something you refused that is back, is due today.</li>
+          <li><strong>Reviews before an allowance ends.</strong> Allow something until a date, and a review task arrives a week before.</li>
+          <li><strong>The register as a document.</strong> A spreadsheet of every entry and decision, with a new version whenever something changes.</li>
+          <li><strong>Several Macs, one console.</strong> Share the project with your team; every task names its Mac.</li>
+        </ul>
+        <p class="fine">One command links them: <code>opticensus workflow connect</code>, or <code>--team</code> for a shared project. It uses WorkFlow's Agent Bridge, so there is nothing else to install.</p>
         <div class="actions">
           <a class="button" href="https://www.opticell-limited.com/workflow" target="_top">Get WorkFlow</a>
         </div>

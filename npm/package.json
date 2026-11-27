@@ -1,0 +1,15 @@
+{
+  "name": "opticensus",
+  "version": "0.1.0",
+  "description": "Every AI on your Mac, counted: apps, model servers, MCP servers, plugins, hooks and pre-approved actions, with your decision beside each. Uses the WorkFlow app as its console.",
+  "bin": { "opticensus": "bin/opticensus" },
+  "files": ["bin/opticensus", "README.md", "LICENSE"],
+  "os": ["darwin"],
+  "cpu": ["x64", "arm64"],
+  "license": "MIT",
+  "author": "Opticell Limited",
+  "homepage": "https://opticell-limited.com/opticensus",
+  "repository": { "type": "git", "url": "git+https://github.com/TeamDzX/opticensus.git" },
+  "bugs": { "url": "https://github.com/TeamDzX/opticensus/issues" },
+  "keywords": ["ai", "inventory", "audit", "mcp", "claude-code", "macos", "governance", "compliance", "workflow"]
+}

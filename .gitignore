@@ -1,0 +1,13 @@
+.DS_Store
+.build/
+DerivedData/
+xcuserdata/
+*.p8
+*.p12
+.env
+site/*.zip
+site/shots/
+npm/bin/
+npm/README.md
+npm/LICENSE
+npm/*.tgz

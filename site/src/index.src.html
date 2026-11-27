@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OptiCensus by Opticell: every AI on your Mac, counted</title>
+<meta name="description" content="OptiCensus finds the assistants, model servers, plugins and AI tools on your Mac that can reach your work, keeps your decision on each one, and tells you what changed. Free and open source; install with npm. Use WorkFlow as its console.">
+<link rel="icon" type="image/png" href="data:image/png;base64,{{ICON}}">
+<style>
+:root {
+  --text: #14171f;
+  --muted: #5a6372;
+  --line: #e2e5ea;
+  --soft: #f5f6f8;
+  --accent: #2346d4;
+  --accent-dark: #1a36a8;
+  --yes: #17794f;
+  --no: #c2362e;
+  --wait: #955f00;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: #fff; color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 1.0625rem; line-height: 1.55; -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-underline-offset: 0.18em; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.wrap { max-width: 70rem; margin: 0 auto; padding-inline: 1.5rem; }
+h1, h2, h3 { margin: 0; letter-spacing: -0.022em; line-height: 1.1; font-weight: 700; }
+h1 { font-size: clamp(2.5rem, 6vw, 4.25rem); letter-spacing: -0.035em; line-height: 1.04; }
+h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); }
+h3 { font-size: 1.125rem; line-height: 1.3; letter-spacing: -0.01em; }
+p { margin: 0; }
+p + p { margin-top: 0.9em; }
+.sub { color: var(--muted); font-size: 1.15rem; max-width: 46rem; margin-top: 1rem; }
+
+/* header */
+.bar { position: sticky; top: 0; z-index: 5; background: rgba(255, 255, 255, 0.92); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+.top { display: flex; align-items: center; gap: 2rem; padding-block: 0.8rem; }
+.brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.2rem; letter-spacing: -0.02em; color: var(--text); text-decoration: none; }
+.brand img { width: 2rem; height: 2rem; border-radius: 22%; }
+.top nav { display: flex; gap: 1.6rem; font-size: 0.98rem; margin-right: auto; }
+.top nav a { color: var(--text); text-decoration: none; }
+.top nav a:hover { color: var(--accent); }
+
+.button {
+  display: inline-block; padding: 0.72rem 1.35rem; border-radius: 999px; border: 1.5px solid var(--accent);
+  background: var(--accent); color: #fff; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.button:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.button.quiet { background: #fff; color: var(--accent); }
+.button.quiet:hover { background: #eef1fd; color: var(--accent-dark); }
+.button.small { padding: 0.48rem 1rem; font-size: 0.95rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.9rem; }
+
+/* hero */
+.hero { text-align: center; padding-block: 5rem 3rem; }
+.hero h1 { max-width: 22ch; margin-inline: auto; text-wrap: balance; }
+.hero .sub { margin: 1.4rem auto 0; font-size: 1.25rem; max-width: 40rem; }
+.hero .actions { justify-content: center; }
+.hero .note { margin-top: 1.1rem; font-size: 0.95rem; color: var(--muted); }
+
+/* sample register */
+.demo { padding-bottom: 5rem; }
+.book { max-width: 52rem; margin: 0 auto; background: #fff; border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 24px 60px -30px rgba(20, 23, 31, 0.3); padding: 1.25rem 1.5rem 1.5rem; }
+.book-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding-bottom: 0.9rem; border-bottom: 1px solid var(--line); }
+.book-head p { font-size: 0.95rem; color: var(--muted); }
+.group h3 { font-size: 0.98rem; margin: 1.1rem 0 0.1rem; display: flex; gap: 0.5rem; align-items: baseline; }
+.group h3 span { font-weight: 400; color: var(--muted); }
+.group[data-status="needsDecision"] h3 { color: var(--wait); }
+.group[data-status="unexpected"] h3, .group[data-status="notAllowed"] h3 { color: var(--no); }
+.group[data-status="allowed"] h3 { color: var(--yes); }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem 1rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+.row .what { font-family: var(--mono); font-size: 0.84rem; line-height: 1.45; overflow-wrap: anywhere; }
+.row .what b { font-weight: 600; }
+.row .what .kind { display: inline-block; min-width: 10ch; margin-right: 1ch; color: var(--muted); }
+.row .what .why { display: block; color: var(--muted); }
+.row .what .why.alert { color: var(--no); }
+.verdicts { display: flex; gap: 0.4rem; }
+.verdicts button { font: inherit; font-size: 0.84rem; font-weight: 600; padding: 0.3rem 0.75rem; border-radius: 999px; cursor: pointer; background: #fff; border: 1.5px solid currentColor; }
+.verdicts .allow { color: var(--yes); }
+.verdicts .deny { color: var(--no); }
+.verdicts .allow:hover, .verdicts .allow[aria-pressed="true"] { background: var(--yes); color: #fff; border-color: var(--yes); }
+.verdicts .deny:hover, .verdicts .deny[aria-pressed="true"] { background: var(--no); color: #fff; border-color: var(--no); }
+.row.stamped { animation: stamp 0.45s ease-out; }
+@keyframes stamp { from { background: #eef1fd; } to { background: transparent; } }
+.log { margin-top: 1rem; font-family: var(--mono); font-size: 0.8rem; line-height: 1.5; background: var(--soft); border-radius: 0.6rem; padding: 0.75rem 0.9rem; min-height: 4.4em; white-space: pre-wrap; }
+
+/* sections */
+.part { padding-block: 5rem; }
+.soft { background: var(--soft); }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3.5rem; align-items: center; }
+.split img { width: 100%; height: auto; display: block; border-radius: 1rem; }
+.split p { color: var(--muted); margin-top: 1.1rem; }
+
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin-top: 2.5rem; }
+.grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tile { background: #fff; border: 1px solid var(--line); border-radius: 0.9rem; padding: 1.35rem; }
+.tile p, .tile ul { color: var(--muted); font-size: 0.98rem; margin-top: 0.5rem; }
+.tile ul { padding-left: 1.1rem; margin-bottom: 0; }
+.tile li + li { margin-top: 0.35rem; }
+
+.events { margin: 2.5rem 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.events li { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 1.5rem; padding: 1rem 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.events span { color: var(--muted); max-width: 60ch; }
+.tag { font-weight: 700; }
+.tag.wait { color: var(--wait); } .tag.no { color: var(--no); } .tag.yes { color: var(--yes); }
+
+.get { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 3rem; align-items: start; }
+pre { margin: 1.75rem 0 0; padding: 1.2rem 1.35rem; background: #14171f; color: #e8ebf2; border-radius: 0.9rem; font-family: var(--mono); font-size: 0.88rem; line-height: 1.65; overflow-x: auto; }
+pre .c { color: #8e99ad; }
+code { font-family: var(--mono); font-size: 0.92em; }
+.fine { font-size: 0.95rem; color: var(--muted); margin-top: 1rem; }
+
+footer { background: #14171f; color: #b9c0cc; padding-block: 2.25rem; font-size: 0.95rem; }
+footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+footer a { color: #fff; }
+
+@media (max-width: 62rem) {
+  .grid, .grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split, .get { grid-template-columns: minmax(0, 1fr); gap: 2.25rem; }
+  .top nav { display: none; }
+  .top { justify-content: space-between; }
+  .part { padding-block: 3.5rem; }
+  .hero { padding-block: 3.25rem 2.5rem; }
+}
+@media (max-width: 36rem) {
+  .grid, .grid.three { grid-template-columns: minmax(0, 1fr); }
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .events li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+  .book { padding: 1rem 1rem 1.2rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .row.stamped { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <header class="wrap top">
+    <a class="brand" href="#top"><img src="data:image/png;base64,{{ICON}}" alt="">OptiCensus</a>
+    <nav aria-label="Sections">
+      <a href="#finds">What it finds</a>
+      <a href="#reports">What it reports</a>
+      <a href="#workflow">With WorkFlow</a>
+      <a href="#privacy">Privacy</a>
+    </nav>
+    <a class="button small" href="#get">Get it free</a>
+  </header>
+</div>
+
+<main id="top">
+  <section class="wrap hero">
+    <h1>Every AI on your Mac, counted</h1>
+    <p class="sub">OptiCensus finds the assistants, model servers and AI tools that can reach your work and puts them in one register. You decide which stay. It speaks up when something new arrives, or when one you allowed starts doing more.</p>
+    <div class="actions">
+      <a class="button" href="#get">Install it free</a>
+      <a class="button quiet" href="#workflow">Decide from WorkFlow</a>
+    </div>
+    <p class="note">Free and open source. No account, and nothing leaves your Mac.</p>
+  </section>
+
+  <section class="wrap demo">
+    <div class="book" aria-label="A sample register you can try">
+      <div class="book-head">
+        <p>Try it: a sample register. Allow or refuse a few entries, then press Scan again.</p>
+        <button class="button small" type="button" id="scan">Scan again</button>
+      </div>
+      <div id="register"></div>
+      <div class="log" id="log" role="status" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="part soft">
+    <div class="wrap split">
+      <div>
+        <h2>Reception signs in every visitor. Your Mac doesn't.</h2>
+        <p>AI arrives quietly: an app you tried once, a helper that starts at login, a new tool an assistant was handed last week, a plugin that runs commands on its own. Each one can read files, run commands or listen on a port.</p>
+        <p>Sooner or later a client, an insurer or an auditor asks which AI you use and what it can reach. A straight answer starts with a list. OptiCensus keeps it, with your decision and your reason beside every entry, ready to export as a spreadsheet.</p>
+      </div>
+      <img src="data:image/jpeg;base64,{{DESK}}" alt="An open, empty visitors' book on a desk, with a rubber stamp, an ink pad and a pen." width="1360" height="768">
+    </div>
+  </section>
+
+  <section class="part" id="finds">
+    <div class="wrap">
+      <h2>What it finds</h2>
+      <p class="sub">It looks in eleven places where AI lives on a Mac. A scan takes about a second and needs no special permissions.</p>
+      <div class="grid">
+        <div class="tile"><h3>Installed apps</h3><p>AI apps in your Applications folders, with their version.</p></div>
+        <div class="tile"><h3>Running now</h3><p>Assistants and model servers running at the moment of the scan.</p></div>
+        <div class="tile"><h3>Things that start by themselves</h3><p>Launch agents, daemons and crontab lines that start an AI tool, and when they run.</p></div>
+        <div class="tile"><h3>Tools given to assistants</h3><p>MCP servers set up for Claude Code, Claude desktop, Cursor, VS Code, Windsurf, Gemini and Codex, including those that arrive inside a plugin.</p></div>
+        <div class="tile"><h3>Listening ports</h3><p>Local model servers, and whether they answer only this Mac or anyone on the network.</p></div>
+        <div class="tile"><h3>Command-line assistants</h3><p>Assistants installed where your terminal can find them.</p></div>
+        <div class="tile"><h3>Names of AI keys</h3><p>Which AI keys your shell start-up files set. The name only, never the key.</p></div>
+        <div class="tile"><h3>Browser extensions</h3><p>AI extensions in Chrome, Edge, Brave, Arc, Vivaldi, Chromium and Opera.</p></div>
+        <div class="tile"><h3>Assistant plugins</h3><p>Claude Code plugins, whether they are switched on, and what each brings: MCP servers, language servers, hooks and skills.</p></div>
+        <div class="tile"><h3>What runs without asking</h3><p>What an assistant may do without asking you: Claude Code's permission rules and modes, Codex's approval policy, Gemini's auto-accept.</p></div>
+        <div class="tile"><h3>Hooks</h3><p>Commands Claude Code runs by itself when an assistant starts, stops or uses a tool, from settings and plugins.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="part soft" id="reports">
+    <div class="wrap">
+      <h2>What it reports after each scan</h2>
+      <ul class="events">
+        <li><strong class="tag wait">New</strong><span>Something it has never seen before. It waits for your decision.</span></li>
+        <li><strong class="tag wait">Changed</strong><span>An entry you allowed now does something different: an assistant was given another tool, or a start-up job runs an edited script. Your allowance no longer covers it, so it asks again.</span></li>
+        <li><strong class="tag no">Exposed</strong><span>A model server is listening beyond this Mac.</span></li>
+        <li><strong class="tag no">Back</strong><span>Something you refused is present again.</span></li>
+        <li><strong class="tag">Gone</strong><span>Something you allowed has not been seen for 30 days.</span></li>
+        <li><strong class="tag yes">Updated</strong><span>An ordinary version update. It is noted, and your allowance stands.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="part" id="privacy">
+    <div class="wrap">
+      <h2>Private by design</h2>
+      <p class="sub">It reads names, not contents, and everything it finds stays in one folder on your Mac. If you link WorkFlow, the items that need you also go there as tasks, synced through your own iCloud.</p>
+      <div class="grid three">
+        <div class="tile">
+          <h3>It keeps</h3>
+          <ul>
+            <li>Names, paths and versions.</li>
+            <li>A short hash of a command's arguments, a start-up script, a permission rule, a hook or an extension's permissions, so a change is noticed without the content being stored.</li>
+            <li>Your decisions, who made them and why.</li>
+          </ul>
+        </div>
+        <div class="tile">
+          <h3>It never keeps</h3>
+          <ul>
+            <li>The value of a key or token.</li>
+            <li>Prompts or conversations.</li>
+            <li>The contents of your files.</li>
+            <li>Full command lines, or web addresses beyond the host name.</li>
+            <li>Anything in Desktop, Documents, Downloads or iCloud, unless you ask.</li>
+          </ul>
+        </div>
+        <div class="tile">
+          <h3>It cannot do</h3>
+          <ul>
+            <li>See what someone types into a chatbot in a browser.</li>
+            <li>Block or remove anything. It reports and keeps track.</li>
+            <li>Read Safari or code-editor extensions, or network traffic.</li>
+            <li>Allow something on your behalf. Every decision is yours.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="part" id="workflow">
+    <div class="wrap split">
+      <div>
+        <h2>WorkFlow is its console</h2>
+        <p>Link OptiCensus to <a href="https://www.opticell-limited.com/workflow">WorkFlow</a>, our task manager for Mac, iPhone and iPad, and every entry that needs you becomes a task in an OptiCensus project.</p>
+        <p>Answer it wherever you are. Reply <strong>allow</strong> or <strong>deny</strong>, with a reason if you like, and the next scan records your decision, says so on the task and closes it. If something you allowed changes, a new task asks again. If a model server opens up to the network, its task is marked high priority.</p>
+        <p class="fine">One command links them: <code>opticensus workflow connect</code>. It uses WorkFlow's Agent Bridge, so there is nothing else to install.</p>
+      </div>
+      <div class="tile" aria-label="A sample task in WorkFlow">
+        <p class="fine">OptiCensus project</p>
+        <h3>Decide: cloudflare (MCP server)</h3>
+        <p>No decision yet. Claude Code, plugin cloudflare, host mcp.cloudflare.com.</p>
+        <ul>
+          <li><strong>You:</strong> allow, we deploy client sites with it</li>
+          <li><strong>OptiCensus:</strong> Recorded: allowed. Reason: we deploy client sites with it.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+  <section class="part soft" id="get">
+    <div class="wrap get">
+      <div>
+        <h2>Install it free</h2>
+        <p class="sub">Version 0.1 for macOS 13 or later, Intel and Apple silicon. Free and open source under the MIT licence.</p>
+<pre><span class="c"># install</span>
+npm install -g opticensus
+
+<span class="c"># look, then decide</span>
+opticensus scan
+opticensus show
+opticensus allow claude --reason "used for client work"
+
+<span class="c"># decide from WorkFlow instead, and scan every hour</span>
+opticensus workflow connect
+opticensus schedule install
+
+<span class="c"># the list for a client or an auditor</span>
+opticensus export --csv -o ai-register.csv</pre>
+        <p class="fine">The npm package is the compiled tool and nothing else: no install script, nothing fetched at install time. Run <code>opticensus reads</code> for the full list of what it reads. The hourly scan is removed with <code>opticensus schedule uninstall</code>.</p>
+        <div class="actions">
+          <a class="button quiet" data-repo hidden href="#">See the code on GitHub</a>
+        </div>
+      </div>
+      <div class="tile">
+        <h3>Rather build it yourself?</h3>
+        <p>Read the source first and build it on your own Mac with Swift. The zip holds the same code the npm package is built from.</p>
+<pre>unzip opticensus-0.1.0-src.zip
+cd opticensus-0.1.0
+swift build -c release</pre>
+        <div class="actions">
+          <a class="button" data-source href="#get">Download the source (zip)</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>OptiCensus 0.1 by Opticell Limited. Free and open source, for macOS.</span>
+    <span data-contact></span>
+  </div>
+</footer>
+
+<script>
+// The only settings on this page. Leave "repo" empty until the repository is public.
+const SITE = {
+  email: "{{EMAIL}}",
+  repo: "{{REPO}}",
+};
+
+for (const a of document.querySelectorAll("[data-notify]")) {
+  if (SITE.email) {
+    a.href = "mailto:" + SITE.email
+      + "?subject=" + encodeURIComponent("Tell me when the OptiCensus app exists")
+      + "&body=" + encodeURIComponent("Yes, I would use an OptiCensus menu-bar app.\n\nWhat I would use it for (optional):\n");
+  } else {
+    a.hidden = true;
+  }
+}
+for (const a of document.querySelectorAll("[data-repo]")) {
+  if (SITE.repo) { a.href = SITE.repo; a.hidden = false; }
+}
+if (SITE.email) {
+  const c = document.querySelector("[data-contact]");
+  const a = document.createElement("a");
+  a.href = "mailto:" + SITE.email;
+  a.textContent = SITE.email;
+  c.append(a);
+}
+
+// The source zip travels inside this file, so the page works wherever it is hosted.
+const SOURCE = { name: "{{SOURCE}}", data: "{{ZIP}}" };
+for (const a of document.querySelectorAll("[data-source]")) {
+  const bytes = Uint8Array.from(atob(SOURCE.data), c => c.charCodeAt(0));
+  a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+  a.download = SOURCE.name;
+}
+
+// ---- the sample register: the same rules the tool applies ----
+const items = [
+  { id: "a51c0e", kind: "app", name: "Claude", detail: "/Applications/Claude.app, version 1.2", mark: "v1", present: true },
+  { id: "9752de", kind: "autostart", name: "com.example.nightly-agent", detail: "runs /bin/bash every 900 s", mark: "s1", present: true },
+  { id: "667d61", kind: "mcp", name: "files", detail: "claude-code runs @example/server-files", mark: "t1", present: true },
+  { id: "c40b17", kind: "port", name: "Ollama-style model server", detail: "port 11434, this Mac only", mark: "p", present: true, exposed: false },
+  { id: "f528c0", kind: "cli", name: "claude", detail: "~/.local/bin/claude", mark: "c", present: true },
+  { id: "3e8a92", kind: "key", name: "OPENAI_API_KEY", detail: "set in ~/.zshrc (name only)", mark: "k", present: true },
+  { id: "d19f44", kind: "extension", name: "ChatGPT Sidebar", detail: "chrome, 4 permissions", mark: "e", present: true },
+];
+
+// Each later scan finds a little more, the way a real week does.
+const scans = [
+  () => {
+    const out = [];
+    const mcp = find("667d61");
+    mcp.detail = "claude-code runs @example/other-server"; mcp.mark = "t2";
+    out.push(["CHANGED", mcp, "runs: @example/server-files → @example/other-server"]);
+    const port = find("c40b17");
+    port.detail = "port 11434, open to the network"; port.exposed = true; port.mark = "p";
+    out.push(["EXPOSED", port, "listening beyond this Mac"]);
+    return out;
+  },
+  () => {
+    const out = [];
+    const cron = { id: "b7e213", kind: "autostart", name: "cron line (Claude)", detail: "*/30 * * * *, arguments kept as a hash", mark: "x", present: true };
+    items.push(cron);
+    out.push(["NEW", cron, "found in your crontab"]);
+    const app = find("a51c0e");
+    app.detail = "/Applications/Claude.app, version 1.3";
+    out.push(["UPDATED", app, "version: 1.2 → 1.3"]);
+    return out;
+  },
+  () => {
+    find("d19f44").present = false;       // the extension is removed: no event, it is simply absent
+    return [];
+  },
+  () => {
+    const ext = find("d19f44");
+    ext.present = true;
+    return ext.verdict === "denied" ? [["BACK", ext, "you refused it, and it is present again"]] : [];
+  },
+];
+let scanCount = 0;
+
+const titles = { needsDecision: "Needs a decision", unexpected: "Unexpected", allowed: "Allowed", notAllowed: "Not allowed" };
+
+function find(id) { return items.find(i => i.id === id); }
+
+function status(i) {
+  if (!i.verdict) return i.exposed && i.present ? "unexpected" : "needsDecision";
+  if (i.verdict === "denied") return i.present ? "unexpected" : "notAllowed";
+  if (i.decidedMark !== i.mark || (i.exposed && !i.decidedExposed)) return i.exposed && i.present ? "unexpected" : "needsDecision";
+  return "allowed";
+}
+
+function why(i) {
+  const notes = [];
+  if (!i.verdict) notes.push("no decision yet");
+  else if (i.verdict === "denied") notes.push(i.present ? "not allowed, but present" : "not allowed, absent");
+  else if (status(i) !== "allowed") notes.push("changed since it was allowed");
+  if (i.exposed && i.present) notes.push("open to the network");
+  if (!i.present && i.verdict !== "denied") notes.push("not present now");
+  return notes.join("; ");
+}
+
+function decide(id, verdict) {
+  const i = find(id);
+  i.verdict = verdict;
+  i.decidedMark = i.mark;
+  i.decidedExposed = !!i.exposed;
+  say([[verdict === "allowed" ? "ALLOWED" : "DENIED", i, "by you"]]);
+  render(id);
+}
+
+function say(events) {
+  const log = document.getElementById("log");
+  log.textContent = events.length
+    ? events.map(([type, i, note]) => type.padEnd(8) + " " + i.kind.padEnd(10) + i.name + "\n         " + note).join("\n")
+    : "No changes.";
+}
+
+function render(stampedId) {
+  const root = document.getElementById("register");
+  root.textContent = "";
+  for (const key of Object.keys(titles)) {
+    const group = items.filter(i => status(i) === key);
+    if (!group.length) continue;
+    const section = document.createElement("div");
+    section.className = "group";
+    section.dataset.status = key;
+    const h = document.createElement("h3");
+    h.append(titles[key] + " ");
+    const n = document.createElement("span");
+    n.textContent = group.length;
+    h.append(n);
+    section.append(h);
+    for (const i of group) {
+      const row = document.createElement("div");
+      row.className = "row" + (i.id === stampedId ? " stamped" : "");
+      const what = document.createElement("div");
+      what.className = "what";
+      const kind = document.createElement("span");
+      kind.className = "kind";
+      kind.textContent = i.kind;
+      const name = document.createElement("b");
+      name.textContent = i.name;
+      const detail = document.createElement("span");
+      detail.className = "why";
+      detail.textContent = i.detail;
+      const reason = document.createElement("span");
+      reason.className = "why" + (key === "unexpected" ? " alert" : "");
+      reason.textContent = why(i);
+      what.append(kind, name, detail);
+      if (reason.textContent) what.append(reason);
+      const verdicts = document.createElement("div");
+      verdicts.className = "verdicts";
+      for (const [verdict, label] of [["allowed", "Allow"], ["denied", "Refuse"]]) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = verdict === "allowed" ? "allow" : "deny";
+        b.textContent = label;
+        b.setAttribute("aria-pressed", String(i.verdict === verdict && (verdict === "denied" || key === "allowed")));
+        b.setAttribute("aria-label", label + " " + i.name);
+        b.addEventListener("click", () => decide(i.id, verdict));
+        verdicts.append(b);
+      }
+      row.append(what, verdicts);
+      section.append(row);
+    }
+    root.append(section);
+  }
+}
+
+document.getElementById("scan").addEventListener("click", () => {
+  const events = scanCount < scans.length ? scans[scanCount]() : [];
+  scanCount += 1;
+  say(events);
+  render();
+});
+
+render();
+document.getElementById("log").textContent = "First scan: 7 entries, all new.\nNothing is allowed until you say so.";
+</script>
+</body>
+</html>

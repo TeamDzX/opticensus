@@ -9,11 +9,11 @@ import base64, pathlib, subprocess, sys
 
 here = pathlib.Path(__file__).parent
 EMAIL = "opticensus@opticell-limited.com"
-SOURCE = "opticensus-0.1.3-src.zip"
+SOURCE = "opticensus-0.1.4-src.zip"
 repo = sys.argv[sys.argv.index("--repo") + 1] if "--repo" in sys.argv else ""
 
 # The download: the committed source, without the internal notes.
-subprocess.run(["git", "archive", "--format=zip", "--prefix=opticensus-0.1.3/", "-o", str(here / SOURCE), "HEAD",
+subprocess.run(["git", "archive", "--format=zip", "--prefix=opticensus-0.1.4/", "-o", str(here / SOURCE), "HEAD",
                 "Package.swift", "README.md", "LICENSE", "Sources", "Tests"], cwd=here.parent, check=True)
 
 def b64(path):

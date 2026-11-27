@@ -4,7 +4,7 @@ import Foundation
 public enum Product {
     public static let name = "OptiCensus"
     public static let command = "opticensus"
-    public static let version = "0.1.3"
+    public static let version = "0.1.4"
     /// Days an allowed item may go unseen before it is reported as gone.
     public static let goneAfterDays = 30
 }

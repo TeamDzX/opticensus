@@ -1,13 +1,15 @@
 # Push a tag like v0.1.0 (matching Product.swift and npm/package.json) to
 # test, build the universal binary, attach it to a GitHub release and
-# publish the npm package. Needs the NPM_TOKEN repository secret.
+# publish the npm package. Publishing uses npm trusted publishing: npm trusts
+# this workflow file in TeamDzX/opticensus (set on npmjs.com, package
+# settings), so no token is stored. Needs npm 11.5.1+ and Node 22.14+.
 name: release
 on:
   push:
     tags: ["v*"]
 permissions:
   contents: write     # the GitHub release
-  id-token: write     # npm provenance: the package says which commit and workflow built it
+  id-token: write     # trusted publishing and provenance: GitHub vouches for this run to npm
 jobs:
   release:
     runs-on: macos-15
@@ -16,7 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+      - name: npm new enough for trusted publishing
+        run: npm install -g npm@latest && npm --version
       - name: Tag matches the version
         run: |
           v=$(sed -n 's/.*static let version = "\(.*\)".*/\1/p' Sources/OptiCensusCore/Product.swift)
@@ -28,10 +31,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp npm/bin/opticensus opticensus-macos-universal
+          # A re-run after a failed publish finds the release already there.
           gh release create "$GITHUB_REF_NAME" opticensus-macos-universal npm/opticensus-*.tgz \
-            --title "OptiCensus $GITHUB_REF_NAME" --generate-notes
+            --title "OptiCensus $GITHUB_REF_NAME" --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" opticensus-macos-universal npm/opticensus-*.tgz --clobber
       - name: npm publish
         working-directory: npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public

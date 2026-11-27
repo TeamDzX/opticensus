@@ -263,7 +263,7 @@ footer a { color: #fff; }
       <div>
         <h2>WorkFlow is its console</h2>
         <p>Link OptiCensus to <a href="https://www.opticell-limited.com/workflow">WorkFlow</a>, our task manager for Mac, iPhone and iPad, and every entry that needs you becomes a task in an OptiCensus project.</p>
-        <p>Answer it wherever you are. Reply <strong>allow</strong> or <strong>deny</strong>, with a reason if you like, and the next scan records your decision, says so on the task and closes it. If something you allowed changes, a new task asks again. If a model server opens up to the network, its task is marked high priority.</p>
+        <p>Answer it wherever you are. Each task has an <strong>Allow</strong> and a <strong>Refuse</strong> card: tap Apply on one and the task closes. Or reply with a reason, like "allow, we use it for client work". The next scan records your decision and says so on the task. If something you allowed changes, a new task asks again. If a model server opens up to the network, its task is marked high priority.</p>
         <p class="fine">One command links them: <code>opticensus workflow connect</code>. It uses WorkFlow's Agent Bridge, so there is nothing else to install.</p>
       </div>
       <div class="tile" aria-label="A sample task in WorkFlow">
@@ -271,8 +271,9 @@ footer a { color: #fff; }
         <h3>Decide: cloudflare (MCP server)</h3>
         <p>No decision yet. Claude Code, plugin cloudflare, host mcp.cloudflare.com.</p>
         <ul>
-          <li><strong>You:</strong> allow, we deploy client sites with it</li>
-          <li><strong>OptiCensus:</strong> Recorded: allowed. Reason: we deploy client sites with it.</li>
+          <li><strong>Allow cloudflare:</strong> it stays on the allowed list. <em>Apply · Decline</em></li>
+          <li><strong>Refuse cloudflare:</strong> it is marked not allowed. <em>Apply · Decline</em></li>
+          <li><strong>You</strong> applied Allow. <strong>OptiCensus:</strong> Recorded: allowed.</li>
         </ul>
       </div>
     </div>
@@ -304,8 +305,8 @@ opticensus export --csv -o ai-register.csv</pre>
       <div class="tile">
         <h3>Rather build it yourself?</h3>
         <p>Read the source first and build it on your own Mac with Swift. The zip holds the same code the npm package is built from.</p>
-<pre>unzip opticensus-0.1.0-src.zip
-cd opticensus-0.1.0
+<pre>unzip opticensus-0.1.1-src.zip
+cd opticensus-0.1.1
 swift build -c release</pre>
         <div class="actions">
           <a class="button" data-source href="#get">Download the source (zip)</a>

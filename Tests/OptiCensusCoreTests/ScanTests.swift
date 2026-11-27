@@ -374,4 +374,33 @@ final class ScanTests: XCTestCase {
         XCTAssertFalse(text.contains("claude"), "only refused items")
         XCTAssertTrue(Report.decisions(register, .allowed, now: env.now).contains("cli        claude"))
     }
+
+    func testAssistantsWritingIntoWorkFlow() throws {
+        try write("\(home)/.workflow-companion/bridge-root.json", #"{"root": "/Users/test/Bridge"}"#)
+        try write("/Users/test/Bridge/audit.json", """
+        [{"id": "1", "op": "add_comment", "status": "applied", "at": "2026-11-27T10:00:00Z", "summary": "SECRET-PROMPT-TEXT", "agent": "Claude", "via": "bridge"},
+         {"id": "2", "op": "create_task", "status": "applied", "at": "2026-11-27T11:00:00Z", "summary": "x", "agent": "Claude", "via": "bridge"},
+         {"id": "3", "op": "add_comment", "status": "applied", "at": "2026-11-27T11:30:00Z", "summary": "x", "agent": "Jarvis", "via": "cloud"},
+         {"id": "4", "op": "create_task", "status": "applied", "at": "2026-11-27T12:00:00Z", "summary": "x", "agent": "OptiCensus", "via": "bridge"},
+         {"id": "5", "op": "complete_task", "status": "applied", "at": "2026-11-27T12:00:00Z", "summary": "x", "agent": "Claude", "via": "proposal"},
+         {"id": "6", "op": "ping", "status": "applied", "at": "2026-11-27T12:00:00Z", "summary": "before 6.1, no name"}]
+        """)
+        scan()
+        let claude = try item("writer:workflow:claude")
+        XCTAssertEqual(claude.detail["commands"], "2 in WorkFlow's recent history")
+        XCTAssertEqual(claude.detail["through"], "bridge")
+        XCTAssertEqual(claude.detail["last"], "2026-11-27 11:00")
+        XCTAssertNotNil(register.items["writer:workflow:jarvis"])
+        XCTAssertNil(register.items["writer:workflow:opticensus"], "not itself")
+        let everything = String(decoding: try JSONEncoder().encode(register), as: UTF8.self)
+        XCTAssertFalse(everything.contains("SECRET-PROMPT-TEXT"), "what a command said is not kept")
+
+        // The same assistant arriving another way is recorded, and its allowance stands.
+        try decide(.allowed, "writer:workflow:claude")
+        try write("/Users/test/Bridge/audit.json", """
+        [{"id": "7", "op": "add_comment", "status": "applied", "at": "2026-11-28T10:00:00Z", "summary": "x", "agent": "Claude", "via": "cloud"}]
+        """)
+        XCTAssertTrue(scan(daysLater: 1).contains { $0.type == .updated && $0.key == "writer:workflow:claude" })
+        XCTAssertEqual(try item("writer:workflow:claude").status(now: env.now), .allowed)
+    }
 }

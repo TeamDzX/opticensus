@@ -21,6 +21,8 @@ public enum WorkFlow {
     /// WorkFlow drops a proposal card after seven days; a fresh pair goes up then.
     static let cardLifetime: TimeInterval = 7 * 86_400
     static let appliedPrefix = "✓ Applied "
+    /// WorkFlow 6.1's decision card: one card, Allow / Allow until / Refuse.
+    static let decidedPrefix = "🗳 Decided "
     /// A review task appears this long before a time-limited allowance ends.
     static let reviewAhead: TimeInterval = 7 * 86_400
     static let smartLists = ["OptiCensus: needs a decision", "OptiCensus: unexpected"]
@@ -56,6 +58,8 @@ public enum WorkFlow {
         public var registerHash: String?
         public var registerDocCreated: Bool?
         public var pendingDoc: String?
+        /// Set when WorkFlow turned down `ask_decision` (older than 6.1): use the two cards.
+        public var noDecisionCards: Bool?
 
         public var isTeam: Bool { team == true }
         public var registerDocName: String {
@@ -183,6 +187,12 @@ public enum WorkFlow {
                   let r = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
             link.pendingCards?[commandID] = nil
             let parts = tagged.split(separator: "|", maxSplits: 1).map(String.init)
+            if parts.first == "decision", r["status"] as? String == "rejected" {
+                // An older WorkFlow: no decision cards. The two cards go up instead, next pass.
+                link.noDecisionCards = true
+                if parts.count == 2, var t = link.tasks[parts[1]] { t.cardsAt = nil; t.cards = nil; link.tasks[parts[1]] = t }
+                continue
+            }
             guard parts.count == 2, let code = r["proposal"] as? String, var t = link.tasks[parts[1]] else {
                 if r["status"] as? String != "applied" {
                     out.problems.append("WorkFlow did not take a decision card: \(r["message"] as? String ?? "no reason given")")
@@ -247,7 +257,10 @@ public enum WorkFlow {
                 let text = c["text"] as? String ?? ""
                 var fromCard = false
                 var reply = parse(text)
-                if text.hasPrefix(appliedPrefix) {
+                if let a = parseDecided(text), t.cards?[a.code] == "decision" {
+                    reply = a.reply
+                    fromCard = true
+                } else if text.hasPrefix(appliedPrefix) {
                     let code = String(text.dropFirst(appliedPrefix.count).prefix { !$0.isWhitespace })
                     if let which = t.cards?[code] {
                         reply = Reply(state: which == "allow" ? .allowed : .denied, until: nil, reason: "")
@@ -283,13 +296,25 @@ public enum WorkFlow {
             link.tasks[key] = t
         }
 
-        // 2b. Allow and Refuse cards on every open task that has none (or whose cards have lapsed).
+        // 2b. A decision card (WorkFlow 6.1), or Allow and Refuse cards, on every open task
+        // that has none (or whose cards have lapsed).
+        let useDecisionCards = link.noDecisionCards != true && supportsDecisionCards(bridge)
         let carding = Set((link.pendingCards ?? [:]).values.compactMap { $0.split(separator: "|", maxSplits: 1).last.map(String.init) })
         for key in link.tasks.keys.sorted() {
             guard var t = link.tasks[key], !t.closed, !carding.contains(key), let item = register.items[key] else { continue }
             if let at = t.cardsAt, now.timeIntervalSince(at) < cardLifetime { continue }
             let onMac = link.isTeam ? " on \(link.machine ?? "this Mac")" : ""
             let reviewing = item.verdict?.state == .allowed && item.verdict?.until != nil
+            if useDecisionCards {
+                let question = reviewing ? "Keep allowing \(item.name)\(onMac)?" : "Allow \(item.name)\(onMac)?"
+                let id = send("ask_decision", ["taskID": t.taskID, "text": question,
+                                               "reason": item.why(now: now).prefix(1).uppercased() + item.why(now: now).dropFirst() + "."])
+                link.pendingCards = (link.pendingCards ?? [:]).merging([id: "decision|\(key)"]) { _, new in new }
+                t.cards = [:]; t.cardsAt = now
+                out.carded += 1
+                link.tasks[key] = t
+                continue
+            }
             for (which, summary, reason) in [
                 ("allow", reviewing ? "Keep allowing \(item.name)\(onMac)" : "Allow \(item.name)\(onMac)",
                  reviewing ? "Allowed with no end date. To set a new end date instead, reply \"allow until YYYY-MM-DD\"."
@@ -387,6 +412,37 @@ public enum WorkFlow {
         return out
     }
 
+    /// WorkFlow lists the commands it takes in state.json; 6.1 adds `ask_decision`.
+    static func supportsDecisionCards(_ bridge: URL) -> Bool {
+        guard let d = try? Data(contentsOf: bridge.appendingPathComponent("state.json")),
+              let state = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let ops = state["ops"] as? [String] else { return false }
+        return ops.contains("ask_decision")
+    }
+
+    /// "🗳 Decided K7M2: allow", "…: allow until 2027-03-31 — a trial", "…: refuse — not ours".
+    static func parseDecided(_ text: String) -> (code: String, reply: Reply)? {
+        guard text.hasPrefix(decidedPrefix) else { return nil }
+        let body = text.dropFirst(decidedPrefix.count)
+        guard let colon = body.range(of: ": ") else { return nil }
+        let code = String(body[..<colon.lowerBound])
+        var rest = String(body[colon.upperBound...]), reason = ""
+        if let dash = rest.range(of: " — ") {
+            reason = String(rest[dash.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            rest = String(rest[..<dash.lowerBound])
+        }
+        rest = rest.trimmingCharacters(in: .whitespaces)
+        if rest.hasPrefix("allow until ") {
+            guard let until = Format.parseDay(String(rest.dropFirst("allow until ".count)), endOfDay: true) else { return nil }
+            return (code, Reply(state: .allowed, until: until, reason: reason))
+        }
+        switch rest {
+        case "allow": return (code, Reply(state: .allowed, until: nil, reason: reason))
+        case "refuse": return (code, Reply(state: .denied, until: nil, reason: reason))
+        default: return nil
+        }
+    }
+
     static func snapshotDate(_ value: Any?) -> Date? {
         guard let s = value as? String else { return nil }
         let f = ISO8601DateFormatter()
@@ -412,6 +468,7 @@ public enum WorkFlow {
         case .plugin: what = "Claude Code plugin"
         case .approval: what = "pre-approved actions"
         case .hook: what = "hooks"
+        case .writer: what = "assistant writing into WorkFlow"
         }
         let verb = item.status(now: now) == .unexpected ? "Check" : "Decide"
         return "\(verb): \(item.name) (\(what))" + (machine.map { " · \($0)" } ?? "")
@@ -426,7 +483,7 @@ public enum WorkFlow {
         }
         for k in item.detail.keys.sorted() { lines.append("\(k): \(item.detail[k]!)") }
         lines += ["first seen: \(Format.day(item.firstSeen))", "id: \(item.id)", "",
-                  "To decide, tap Apply on the Allow or the Refuse card below.",
+                  "To decide, use the card below: Allow, Allow until a date, or Refuse.",
                   "Or reply with a reason: \"allow, because ...\", \"allow until 2027-03-31, ...\" or \"deny, because ...\".",
                   "\(Product.name) records it at its next scan."]
         return lines.joined(separator: "\n")

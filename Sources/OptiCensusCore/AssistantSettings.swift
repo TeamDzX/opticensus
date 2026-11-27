@@ -273,3 +273,45 @@ struct HookSource: Source {
         return out
     }
 }
+
+// MARK: - Assistants writing into WorkFlow
+
+/// WorkFlow's Agent Bridge lets assistants create and change tasks. From
+/// WorkFlow 6.1 its history names who sent each command; each assistant that
+/// wrote there becomes an item, so a new writer is noticed and decided on.
+struct WorkFlowWriterSource: Source {
+    let id = "workflow-writers"
+    let reads = "Assistants writing into WorkFlow: the command history in WorkFlow's Agent Bridge folder (audit.json, WorkFlow 6.1 or later). The assistant's name, how its commands arrived and which kinds of command it sent are recorded; what the commands said is not."
+
+    func collect(_ env: Env, _ sig: Signatures) -> [Found] {
+        guard let root = env.json(env.home + "/.workflow-companion/bridge-root.json")?["root"] as? String,
+              let data = env.data(root + "/audit.json"),
+              let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
+        struct Writer { var count = 0; var vias: Set<String> = []; var ops: [String: Int] = [:]; var last = "" }
+        var writers: [String: Writer] = [:]
+        for e in entries {
+            guard let agent = (e["agent"] as? String)?.trimmingCharacters(in: .whitespaces), !agent.isEmpty,
+                  agent.caseInsensitiveCompare(WorkFlow.agentName) != .orderedSame,
+                  e["via"] as? String != "proposal" else { continue }   // a card the person applied is their own act
+            var w = writers[agent, default: Writer()]
+            w.count += 1
+            if let via = e["via"] as? String { w.vias.insert(via) }
+            if let op = e["op"] as? String { w.ops[op, default: 0] += 1 }
+            if let at = e["at"] as? String, at > w.last { w.last = at }
+            writers[agent] = w
+        }
+        return writers.keys.sorted().map { agent in
+            let w = writers[agent]!
+            let ops = w.ops.sorted { ($1.value, $0.key) < ($0.value, $1.key) }.prefix(4).map { "\($0.key) \($0.value)" }
+            return Found(
+                kind: .writer, key: "writer:workflow:\(agent.lowercased())", name: agent, tool: nil,
+                detail: ["writes to": "WorkFlow", "commands": "\(w.count) in WorkFlow's recent history",
+                         "through": w.vias.sorted().joined(separator: ", "), "most used": ops.joined(separator: ", "),
+                         "last": String(w.last.prefix(16)).replacingOccurrences(of: "T", with: " ")],
+                // The assistant is the item. Its routes are shown and recorded as an update:
+                // WorkFlow keeps only its last 100 commands, so a route can drop out of view.
+                fingerprint: fingerprint([agent.lowercased()]),
+                version: w.vias.sorted().joined(separator: ","))
+        }
+    }
+}

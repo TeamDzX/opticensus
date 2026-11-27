@@ -12,7 +12,7 @@ public enum Sources {
     public static let all: [Source] = [
         AppsSource(), ProcessSource(), AutostartSource(), MCPSource(),
         PortSource(), CLISource(), KeyNameSource(), ExtensionSource(),
-        PluginSource(), ApprovalSource(), HookSource(),
+        PluginSource(), ApprovalSource(), HookSource(), WorkFlowWriterSource(),
     ]
 }
 

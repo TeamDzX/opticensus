@@ -59,9 +59,11 @@ never raises a macOS permission prompt.
 
 Once linked, every item that needs a person becomes a task in an
 "OptiCensus" project in [WorkFlow](https://www.opticell-limited.com/workflow),
-on the Mac and the phone. Each task carries two cards, **Allow** and
-**Refuse**: tap Apply on one and the task closes. Or reply on the task, with
-a reason:
+on the Mac and the phone. With WorkFlow 6.1 or later each task carries one
+decision card: **Allow**, **Allow until** a date, or **Refuse** with a
+reason, and answering it closes the task. Older WorkFlow versions get two
+cards instead, **Allow** and **Refuse**: tap Apply on one. Or reply on the
+task, with a reason:
 
     allow, because we use it for client work
     allow until 2027-03-31, trial
@@ -110,8 +112,10 @@ Gemini, Codex), listening ports, command-line assistants on the PATH, names
 of AI keys in shell start-up files, Chromium browser extensions, Claude Code
 plugins (and the MCP servers, language servers and hooks they bring), what
 assistants may do without asking (Claude Code permission rules and default
-mode, Codex approval policy and sandbox mode, Gemini auto-accept), and hooks
-that run commands on assistant events.
+mode, Codex approval policy and sandbox mode, Gemini auto-accept), hooks
+that run commands on assistant events, and the assistants writing into
+WorkFlow through its Agent Bridge (from WorkFlow 6.1, whose command history
+names the sender).
 `opticensus reads` prints the exact wording shown to the owner.
 
 It keeps names, paths, versions and hashes. Arguments, scripts and

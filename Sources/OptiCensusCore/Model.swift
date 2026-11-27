@@ -1,7 +1,7 @@
 import Foundation
 
 public enum Kind: String, Codable, CaseIterable {
-    case app, process, autostart, mcp, port, cli, key, `extension`, plugin, approval, hook
+    case app, process, autostart, mcp, port, cli, key, `extension`, plugin, approval, hook, writer
 
     public var label: String {
         switch self {
@@ -16,6 +16,7 @@ public enum Kind: String, Codable, CaseIterable {
         case .plugin: return "plugin"
         case .approval: return "approval"
         case .hook: return "hook"
+        case .writer: return "writer"
         }
     }
 

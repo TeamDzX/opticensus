@@ -68,7 +68,7 @@ final class WorkFlowTests: XCTestCase {
         let exposed = try XCTUnwrap(sent.first { ($0["title"] as! String).contains("Ollama") })
         XCTAssertEqual(exposed["title"] as? String, "Check: Ollama (model server port)")
         XCTAssertEqual(exposed["priority"] as? String, "High")
-        XCTAssertTrue((exposed["notes"] as! String).contains("tap Apply on the Allow or the Refuse card"))
+        XCTAssertTrue((exposed["notes"] as! String).contains("use the card below: Allow, Allow until a date, or Refuse"))
 
         XCTAssertEqual(sync().created, 0, "not sent twice while WorkFlow has not answered")
         try workflowApplies()
@@ -307,5 +307,80 @@ final class WorkFlowTests: XCTestCase {
                        "OptiCensus AI register (Studio Mac).csv")
         try workflowApplies(); _ = sync(later: 5)
         XCTAssertTrue(try inbox().contains { $0["text"] as? String == "Allow files on Studio Mac" })
+    }
+
+    // MARK: WorkFlow 6.1 decision cards
+
+    func announceDecisionCards() throws {
+        try JSONSerialization.data(withJSONObject: ["ops": ["ping", "propose", "ask_decision"]])
+            .write(to: bridge.appendingPathComponent("state.json"))
+    }
+
+    func testWorkFlow61GetsOneDecisionCard() throws {
+        try announceDecisionCards()
+        sync(); try workflowApplies(); _ = sync()
+        let sent = try inbox()
+        XCTAssertEqual(sent.map { $0["op"] as! String }, ["ask_decision", "ask_decision"])
+        XCTAssertTrue(sent.contains { $0["text"] as? String == "Allow files?" })
+    }
+
+    func answer(_ text: (String) -> String) throws -> WorkFlow.Outcome {
+        try announceDecisionCards()
+        // workflowApplies gives each ask_decision a code, as WorkFlow does in "proposal".
+        sync(); try workflowApplies(); _ = sync()
+        let dir = bridge.appendingPathComponent("inbox")
+        for c in try inbox() where c["op"] as? String == "ask_decision" {
+            let id = c["id"] as! String
+            let code = "D\(cardCodes.count + 1)".padding(toLength: 4, withPad: "X", startingAt: 0)
+            cardCodes[c["text"] as! String] = code
+            try JSONSerialization.data(withJSONObject: ["id": id, "op": "ask_decision", "status": "applied", "proposal": code, "taskID": c["taskID"]!])
+                .write(to: bridge.appendingPathComponent("outbox/\(id).json"))
+            try FileManager.default.removeItem(at: dir.appendingPathComponent("\(id).json"))
+        }
+        _ = sync(later: 5)
+        let key = "mcp:claude-code:user:files"
+        try snapshot([["id": link.tasks[key]!.taskID, "status": "Completed", "comments": [
+            ["id": "c1", "author": "Me", "text": text(cardCodes["Allow files?"]!)]]]])
+        return sync(later: 60)
+    }
+
+    func testAllowUntilFromTheDecisionCard() throws {
+        let out = try answer { "🗳 Decided \($0): allow until 2027-03-31 — a trial" }
+        XCTAssertEqual(out.decisions.map(\.type), [.allowed])
+        let v = try XCTUnwrap(register.items["mcp:claude-code:user:files"]?.verdict)
+        XCTAssertEqual(Format.day(v.until!), "31 Mar 2027")
+        XCTAssertEqual(v.reason, "a trial")
+        XCTAssertFalse(try ops().contains("complete_task"), "answering the card closed the task already")
+    }
+
+    func testRefuseFromTheDecisionCard() throws {
+        let out = try answer { "🗳 Decided \($0): refuse — not ours" }
+        XCTAssertEqual(out.decisions.map(\.type), [.denied])
+        XCTAssertEqual(register.items["mcp:claude-code:user:files"]?.verdict?.reason, "not ours")
+    }
+
+    func testAnAnswerToAnotherCodeIsIgnored() throws {
+        let out = try answer { _ in "🗳 Decided ZZZZ: allow" }
+        XCTAssertTrue(out.decisions.isEmpty)
+    }
+
+    func testAnOlderWorkFlowGetsTheTwoCards() throws {
+        try announceDecisionCards()          // says it can, then turns it down
+        sync(); try workflowApplies(); _ = sync()
+        for c in try inbox() where c["op"] as? String == "ask_decision" {
+            let id = c["id"] as! String
+            try JSONSerialization.data(withJSONObject: ["id": id, "op": "ask_decision", "status": "rejected", "message": "Unknown op"])
+                .write(to: bridge.appendingPathComponent("outbox/\(id).json"))
+            try FileManager.default.removeItem(at: bridge.appendingPathComponent("inbox/\(id).json"))
+        }
+        _ = sync(later: 5)
+        XCTAssertEqual(link.noDecisionCards, true)
+        XCTAssertEqual(try inbox().filter { $0["op"] as? String == "propose" }.count, 4)
+    }
+
+    func testParseDecided() {
+        XCTAssertEqual(WorkFlow.parseDecided("🗳 Decided K7M2: allow")?.reply.state, .allowed)
+        XCTAssertNil(WorkFlow.parseDecided("🗳 Decided K7M2: allow until soon"))
+        XCTAssertNil(WorkFlow.parseDecided("🗳 Decided K7M2: maybe"))
     }
 }

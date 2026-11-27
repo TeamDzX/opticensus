@@ -8,6 +8,7 @@ final class WorkFlowTests: XCTestCase {
     var register = Register()
     var link: WorkFlow.Link!
     let now = Date(timeIntervalSince1970: 1_800_000_000)
+    var cardCodes: [String: String] = [:]   // card summary ("Allow files") -> its proposal code
 
     override func setUpWithError() throws {
         bridge = FileManager.default.temporaryDirectory.appendingPathComponent("opticensus-bridge-\(UUID().uuidString)")
@@ -39,6 +40,11 @@ final class WorkFlowTests: XCTestCase {
             let id = c["id"] as! String
             var r: [String: Any] = ["id": id, "op": c["op"]!, "status": "applied", "message": "ok"]
             if c["op"] as? String == "create_task" { r["taskID"] = taskIDs[c["title"] as! String] ?? "T-\(c["title"]!)" }
+            if c["op"] as? String == "propose" {
+                let code = "P\(cardCodes.count + 1)"
+                r["proposal"] = code
+                cardCodes[c["text"] as! String] = code
+            }
             try JSONSerialization.data(withJSONObject: r).write(to: bridge.appendingPathComponent("outbox/\(id).json"))
             try FileManager.default.removeItem(at: dir.appendingPathComponent("\(id).json"))
         }
@@ -61,7 +67,7 @@ final class WorkFlowTests: XCTestCase {
         let exposed = try XCTUnwrap(sent.first { ($0["title"] as! String).contains("Ollama") })
         XCTAssertEqual(exposed["title"] as? String, "Check: Ollama (model server port)")
         XCTAssertEqual(exposed["priority"] as? String, "High")
-        XCTAssertTrue((exposed["notes"] as! String).contains("Reply to decide"))
+        XCTAssertTrue((exposed["notes"] as! String).contains("tap Apply on the Allow or the Refuse card"))
 
         XCTAssertEqual(sync().created, 0, "not sent twice while WorkFlow has not answered")
         try workflowApplies()
@@ -77,6 +83,7 @@ final class WorkFlowTests: XCTestCase {
             ["id": "c1", "author": "OptiCensus", "authorID": "agent.opticensus", "text": "deny this is me talking"],
             ["id": "c2", "author": "Me", "text": "Allow until 2027-03-31, because it reads the project folder only"],
         ]]])
+        try workflowApplies()                    // the Allow and Refuse cards went up; WorkFlow took them
         let out = sync(later: 60)
         XCTAssertEqual(out.decisions.map(\.type), [.allowed])
         let v = try XCTUnwrap(register.items["mcp:claude-code:user:files"]?.verdict)
@@ -135,5 +142,47 @@ final class WorkFlowTests: XCTestCase {
             .write(to: bridge.appendingPathComponent("snapshot.json"))
         _ = sync(later: 600)
         XCTAssertTrue(link.tasks.values.allSatisfy(\.closed))
+    }
+
+    func testEachOpenTaskGetsAnAllowAndARefuseCard() throws {
+        sync(); try workflowApplies()
+        _ = sync()
+        let cards = try inbox()
+        XCTAssertEqual(cards.map { $0["op"] as! String }, ["propose", "propose", "propose", "propose"])
+        let allow = try XCTUnwrap(cards.first { $0["text"] as? String == "Allow files" })
+        XCTAssertEqual((allow["proposal"] as? [String: Any])?["op"] as? String, "complete_task")
+        try workflowApplies()
+        _ = sync(later: 10)
+        XCTAssertTrue(try inbox().isEmpty, "cards are not sent twice")
+        XCTAssertEqual(link.tasks["mcp:claude-code:user:files"]?.cards?.count, 2)
+
+        // Eight days on, WorkFlow has dropped them: a fresh pair goes up.
+        _ = sync(later: 8 * 86_400)
+        XCTAssertEqual(try inbox().filter { $0["op"] as? String == "propose" }.count, 4)
+    }
+
+    func testApplyingTheRefuseCardIsTheDecision() throws {
+        sync(); try workflowApplies(); _ = sync(); try workflowApplies(); _ = sync(later: 5)
+        let key = "mcp:claude-code:user:files"
+        let code = try XCTUnwrap(cardCodes["Refuse files"])
+        try snapshot([["id": link.tasks[key]!.taskID, "status": "Completed", "comments": [
+            ["id": "c9", "author": "Me", "text": "✓ Applied \(code)"],
+        ]]])
+        let out = sync(later: 60)
+        XCTAssertEqual(out.decisions.map(\.type), [.denied])
+        XCTAssertEqual(register.items[key]?.verdict?.state, .denied)
+        XCTAssertEqual(register.items[key]?.verdict?.by, "alex in WorkFlow".replacingOccurrences(of: "alex", with: NSUserName()))
+        XCTAssertEqual(try inbox().map { $0["op"] as! String }, ["add_comment"], "applying the card already closed the task")
+        XCTAssertTrue(link.tasks[key]!.closed)
+    }
+
+    func testADeclinedCardIsNotADecision() throws {
+        sync(); try workflowApplies(); _ = sync(); try workflowApplies(); _ = sync(later: 5)
+        let key = "mcp:claude-code:user:files"
+        try snapshot([["id": link.tasks[key]!.taskID, "status": "To Do", "comments": [
+            ["id": "c9", "author": "Me", "text": "✗ Declined \(cardCodes["Allow files"]!) — @OptiCensus: not sure yet"],
+        ]]])
+        XCTAssertTrue(sync(later: 60).decisions.isEmpty)
+        XCTAssertNil(register.items[key]?.verdict)
     }
 }

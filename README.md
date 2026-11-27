@@ -54,22 +54,26 @@ never raises a macOS permission prompt.
     opticensus workflow status | sync | disconnect
 
 Once linked, every item that needs a person becomes a task in an
-"OptiCensus" project in [WorkFlow](https://opticell-limited.com), on the Mac
-and the phone. Reply on the task to decide:
+"OptiCensus" project in [WorkFlow](https://www.opticell-limited.com/workflow),
+on the Mac and the phone. Each task carries two cards, **Allow** and
+**Refuse**: tap Apply on one and the task closes. Or reply on the task, with
+a reason:
 
     allow, because we use it for client work
     allow until 2027-03-31, trial
     deny, not ours
 
-The next scan (or `opticensus workflow sync`) records the decision, says so
-on the task and closes it. A change to an open item is posted as a comment;
+The next scan (or `opticensus workflow sync`) records the decision and says
+so on the task. Cards lapse after seven days in WorkFlow; an undecided task
+gets a fresh pair. A change to an open item is posted as a comment;
 an allowed item that changes gets a new task. Decisions made with `allow` and
 `deny` here close their task too. It goes through WorkFlow's Agent Bridge
 folder only (command files in, receipts and a snapshot out), so WorkFlow
 needs no add-on and has to be running for tasks to appear.
 
-WorkFlow holds an assistant's "mark done" for your OK when its Ask-before
-setting says so. To let OptiCensus close the tasks you have answered, set
+A card closes its task by itself. After a typed reply, WorkFlow holds
+OptiCensus's "mark done" for your OK when its Ask-before setting says so; to
+let it close those too, set
 WorkFlow → Settings → Agent Bridge → Briefs, Check-ins & Approvals →
 OptiCensus → Ask before: Nothing (the entry appears after its first task).
 

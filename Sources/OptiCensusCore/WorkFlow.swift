@@ -2,7 +2,9 @@ import Foundation
 
 /// WorkFlow as the console: every item that needs a person becomes a task in
 /// an "OptiCensus" project, and the person answers on the task, on the Mac or
-/// the phone. A reply that starts with "allow" or "deny" is the decision.
+/// the phone. Each task carries two WorkFlow proposal cards, Allow and
+/// Refuse: Apply on one is the decision, and closes the task. A reply that
+/// starts with "allow" or "deny" works too.
 ///
 /// It talks to WorkFlow only through the app's Agent Bridge folder: command
 /// files into `inbox/`, receipts from `outbox/`, and the app's own
@@ -11,6 +13,9 @@ import Foundation
 public enum WorkFlow {
     public static let agentName = "OptiCensus"
     public static let tag = "OptiCensus"
+    /// WorkFlow drops a proposal card after seven days; a fresh pair goes up then.
+    static let cardLifetime: TimeInterval = 7 * 86_400
+    static let appliedPrefix = "✓ Applied "
 
     /// What this Mac remembers about the link, kept as `workflow.json` in the store.
     public struct Link: Codable {
@@ -21,11 +26,15 @@ public enum WorkFlow {
             public var openedAt: Date
             public var closed = false
             public var seenComments: [String] = []
+            /// Proposal code -> "allow" or "deny", for the cards on this task.
+            public var cards: [String: String]?
+            public var cardsAt: Date?
         }
         public var bridge: String
         public var project = WorkFlow.agentName
         public var tasks: [String: Task] = [:]       // item key -> its task
         public var pending: [String: String] = [:]   // command id -> item key, until the receipt names the task
+        public var pendingCards: [String: String]?   // command id -> "allow|key" or "deny|key", until the receipt gives the code
         public var connectedAt: Date
 
         public init(bridge: String, connectedAt: Date) {
@@ -50,13 +59,14 @@ public enum WorkFlow {
     }
 
     public struct Outcome {
-        public var created = 0, commented = 0, closed = 0, waiting = 0
+        public var created = 0, carded = 0, commented = 0, closed = 0, waiting = 0
         public var decisions: [Event] = []
         public var problems: [String] = []
 
         public var summary: String {
             var parts: [String] = []
             if created > 0 { parts.append("\(created) task\(created == 1 ? "" : "s") sent") }
+            if carded > 0 { parts.append("Allow and Refuse cards on \(carded) task\(carded == 1 ? "" : "s")") }
             if !decisions.isEmpty { parts.append("\(decisions.count) decision\(decisions.count == 1 ? "" : "s") taken from WorkFlow") }
             if commented > 0 { parts.append("\(commented) comment\(commented == 1 ? "" : "s") posted") }
             if closed > 0 { parts.append("\(closed) task\(closed == 1 ? "" : "s") closed") }
@@ -98,8 +108,12 @@ public enum WorkFlow {
             return out
         }
 
+        // Names sort in the order sent, so WorkFlow applies them in that order.
+        let batch = Int(Date().timeIntervalSince1970 * 1000)
+        var sequence = 0
         func send(_ op: String, _ fields: [String: Any]) -> String {
-            let id = "opticensus-\(Int(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString.prefix(6).lowercased())"
+            sequence += 1
+            let id = "opticensus-\(batch)-\(String(format: "%04d", sequence))-\(UUID().uuidString.prefix(4).lowercased())"
             var command = fields
             command["id"] = id; command["op"] = op; command["agentName"] = agentName
             if let d = try? JSONSerialization.data(withJSONObject: command, options: [.prettyPrinted, .sortedKeys]) {
@@ -122,6 +136,20 @@ public enum WorkFlow {
             } else {
                 out.problems.append("WorkFlow did not take the task for \(register.items[key]?.name ?? key): \(r["message"] as? String ?? "no reason given")")
             }
+        }
+        for (commandID, tagged) in (link.pendingCards ?? [:]).sorted(by: { $0.key < $1.key }) {
+            guard let d = try? Data(contentsOf: outbox.appendingPathComponent("\(commandID).json")),
+                  let r = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+            link.pendingCards?[commandID] = nil
+            let parts = tagged.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2, let code = r["proposal"] as? String, var t = link.tasks[parts[1]] else {
+                if r["status"] as? String != "applied" {
+                    out.problems.append("WorkFlow did not take a decision card: \(r["message"] as? String ?? "no reason given")")
+                }
+                continue
+            }
+            t.cards = (t.cards ?? [:]).merging([code: parts[0]]) { _, new in new }
+            link.tasks[parts[1]] = t
         }
         out.waiting = link.pending.count
 
@@ -149,7 +177,17 @@ public enum WorkFlow {
                 guard let cid = c["id"] as? String, !t.seenComments.contains(cid) else { continue }
                 t.seenComments.append(cid)
                 if (c["authorID"] as? String)?.hasPrefix("agent.") == true { continue }
-                guard let reply = parse(c["text"] as? String ?? "") else { continue }
+                let text = c["text"] as? String ?? ""
+                var fromCard = false
+                var reply = parse(text)
+                if text.hasPrefix(appliedPrefix) {
+                    let code = String(text.dropFirst(appliedPrefix.count).prefix { !$0.isWhitespace })
+                    if let which = t.cards?[code] {
+                        reply = Reply(state: which == "allow" ? .allowed : .denied, until: nil, reason: "")
+                        fromCard = true
+                    }
+                }
+                guard let reply else { continue }
                 let author = (c["author"] as? String).flatMap { $0.isEmpty || $0 == "Me" ? nil : $0 } ?? NSUserName()
                 let decided = Engine.decide(reply.state, keys: [key], until: reply.until, by: "\(author) in WorkFlow",
                                             reason: reply.reason, now: now, register: &register)
@@ -158,7 +196,8 @@ public enum WorkFlow {
                 if let until = reply.until { said += " until \(Format.day(until))" }
                 if !reply.reason.isEmpty { said += ". Reason: \(reply.reason)" }
                 _ = send("add_comment", ["taskID": t.taskID, "text": said + "."])
-                _ = send("complete_task", ["taskID": t.taskID, "text": said + "."])
+                // Applying a card has already closed the task.
+                if !fromCard { _ = send("complete_task", ["taskID": t.taskID, "text": said + "."]) }
                 out.commented += 1; out.closed += 1
                 t.closed = true; t.verdictAt = register.items[key]?.verdict?.at
                 break
@@ -174,6 +213,24 @@ public enum WorkFlow {
                 out.closed += 1
                 t.closed = true; t.verdictAt = v.at
             }
+            link.tasks[key] = t
+        }
+
+        // 2b. Allow and Refuse cards on every open task that has none (or whose cards have lapsed).
+        let carding = Set((link.pendingCards ?? [:]).values.compactMap { $0.split(separator: "|", maxSplits: 1).last.map(String.init) })
+        for key in link.tasks.keys.sorted() {
+            guard var t = link.tasks[key], !t.closed, !carding.contains(key), let item = register.items[key] else { continue }
+            if let at = t.cardsAt, now.timeIntervalSince(at) < cardLifetime { continue }
+            for (which, summary, reason) in [
+                ("allow", "Allow \(item.name)", "It stays on the allowed list. \(Product.name) asks again only if it changes."),
+                ("deny", "Refuse \(item.name)", "It is marked not allowed, and flagged at every scan while it is still here."),
+            ] {
+                let id = send("propose", ["taskID": t.taskID, "text": summary, "reason": reason,
+                                          "proposal": ["op": "complete_task", "text": "\(summary): decided in WorkFlow."]])
+                link.pendingCards = (link.pendingCards ?? [:]).merging([id: "\(which)|\(key)"]) { _, new in new }
+            }
+            t.cards = [:]; t.cardsAt = now
+            out.carded += 1
             link.tasks[key] = t
         }
 
@@ -242,11 +299,9 @@ public enum WorkFlow {
         var lines = [item.why(now: now).prefix(1).uppercased() + item.why(now: now).dropFirst() + ".", ""]
         for k in item.detail.keys.sorted() { lines.append("\(k): \(item.detail[k]!)") }
         lines += ["first seen: \(Format.day(item.firstSeen))", "id: \(item.id)", "",
-                  "Reply to decide:",
-                  "  allow, because ...",
-                  "  allow until 2027-03-31, because ...",
-                  "  deny, because ...",
-                  "\(Product.name) records it at its next scan and closes this task."]
+                  "To decide, tap Apply on the Allow or the Refuse card below.",
+                  "Or reply with a reason: \"allow, because ...\", \"allow until 2027-03-31, ...\" or \"deny, because ...\".",
+                  "\(Product.name) records it at its next scan."]
         return lines.joined(separator: "\n")
     }
 

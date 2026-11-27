@@ -11,6 +11,8 @@ allowed it, and what changed since you last looked.
   \(Product.command) allow ITEM [--until YYYY-MM-DD] [--reason TEXT] [--by NAME] [--all]
   \(Product.command) deny ITEM [--reason TEXT] [--by NAME] [--all]
   \(Product.command) clear ITEM [--all]            Remove a decision
+  \(Product.command) refused [KIND] [--json]       Everything refused: by whom, when, why, and how to change it
+  \(Product.command) allowed [KIND] [--json]       Everything allowed, the same way
   \(Product.command) export [--csv] [-o FILE]      The whole register, JSON unless --csv
   \(Product.command) schedule install|status|uninstall [--every MINUTES]
                                        A background scan (hourly unless told otherwise)
@@ -96,6 +98,21 @@ func run() throws {
             print(try Report.json(filtered, signatures: signatures, now: now))
         } else {
             print(Report.register(register, now: now, only: only, verbose: verbose))
+        }
+
+    case "refused", "allowed":
+        let state: Verdict.State = command == "allowed" ? .allowed : .denied
+        var only: Kind?
+        if let k = args.first {
+            guard let kind = Kind(rawValue: k) else { throw Fail(message: "Unknown kind \"\(k)\".") }
+            only = kind
+        }
+        if json {
+            var filtered = register
+            filtered.items = register.items.filter { $0.value.verdict?.state == state && (only == nil || $0.value.kind == only) }
+            print(try Report.json(filtered, signatures: signatures, now: now))
+        } else {
+            print(Report.decisions(register, state, now: now, only: only))
         }
 
     case "diff":

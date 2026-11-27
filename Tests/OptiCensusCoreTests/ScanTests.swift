@@ -360,4 +360,18 @@ final class ScanTests: XCTestCase {
         try write("/commands/ps-comm.txt", "  101 ollama\n  102 /usr/bin/python3\n")
         XCTAssertFalse(scan().contains { $0.key == "process:ollama" })
     }
+
+    func testTheRefusedList() throws {
+        scan()
+        XCTAssertEqual(Report.decisions(register, .denied, now: env.now), "Nothing is refused.")
+        try decide(.denied, "extension:")
+        try decide(.allowed, "cli:claude")
+        let text = Report.decisions(register, .denied, now: env.now)
+        XCTAssertTrue(text.hasPrefix("Refused (1)"))
+        XCTAssertTrue(text.contains("ChatGPT Sidebar"))
+        XCTAssertTrue(text.contains("refused by tester"))
+        XCTAssertTrue(text.contains("present now · flagged at every scan"))
+        XCTAssertFalse(text.contains("claude"), "only refused items")
+        XCTAssertTrue(Report.decisions(register, .allowed, now: env.now).contains("cli        claude"))
+    }
 }

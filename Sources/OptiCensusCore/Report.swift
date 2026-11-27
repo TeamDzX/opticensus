@@ -35,6 +35,39 @@ public enum Report {
         return out.joined(separator: "\n")
     }
 
+    /// Every item with this decision, newest decision first, with who made
+    /// it, when and why, and how to change it.
+    public static func decisions(_ register: Register, _ state: Verdict.State, now: Date, only: Kind? = nil) -> String {
+        let items = register.items.values
+            .filter { $0.verdict?.state == state && (only == nil || $0.kind == only) }
+            .sorted { ($0.verdict!.at, $0.name) > ($1.verdict!.at, $1.name) }
+        let word = state == .allowed ? "allowed" : "refused"
+        guard !items.isEmpty else { return "Nothing is \(word)." }
+        var out = ["\(word.capitalized) (\(items.count))"]
+        for item in items {
+            let v = item.verdict!
+            out.append("  \(item.id)  \(pad(item.kind.label, 9))  \(item.name)")
+            var line = "\(word) by \(v.by) on \(Format.day(v.at))"
+            if let until = v.until { line += ", until \(Format.day(until))" }
+            if !v.reason.isEmpty { line += ": \(v.reason)" }
+            out.append("          " + line)
+            var state: [String] = [item.present ? "present now" : "not present now (last seen \(Format.day(item.lastSeen)))"]
+            if item.verdict?.state == .denied && item.present { state.append("flagged at every scan") }
+            if item.verdict?.state == .allowed && item.changedSinceVerdict { state.append("changed since, so it is asking again") }
+            if let until = v.until, until < now { state.append("allowance ended") }
+            out.append("          → " + state.joined(separator: " · "))
+        }
+        out.append("")
+        if state == .denied {
+            out.append("To change one:  \(Product.command) allow ID --reason \"...\"     (or `clear ID` to decide again;")
+            out.append("                with WorkFlow linked, `clear` puts it back there with fresh Allow and Refuse cards)")
+        } else {
+            out.append("To change one:  \(Product.command) deny ID --reason \"...\"      (or `clear ID` to decide again;")
+            out.append("                with WorkFlow linked, `clear` puts it back there with fresh Allow and Refuse cards)")
+        }
+        return out.joined(separator: "\n")
+    }
+
     public static func events(_ events: [Event]) -> String {
         guard !events.isEmpty else { return "No changes." }
         return events.map { e in

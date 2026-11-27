@@ -26,6 +26,8 @@ the commit and workflow that built it. Or build it yourself:
     opticensus allow ITEM [--until 2027-03-31] [--reason TEXT] [--all]
     opticensus deny ITEM [--reason TEXT]
     opticensus clear ITEM
+    opticensus refused [KIND]          # everything refused: by whom, when, why; and how to change it
+    opticensus allowed [KIND]          # everything allowed, the same way
     opticensus export [--csv] [-o FILE]
     opticensus reads                   # what it reads and what it never keeps
 

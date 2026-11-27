@@ -185,4 +185,17 @@ final class WorkFlowTests: XCTestCase {
         XCTAssertTrue(sync(later: 60).decisions.isEmpty)
         XCTAssertNil(register.items[key]?.verdict)
     }
+
+    func testClearingARefusedItemPutsItBackInWorkFlow() throws {
+        sync(); try workflowApplies(); _ = sync(); try workflowApplies(); _ = sync(later: 5)
+        let key = "mcp:claude-code:user:files"
+        try snapshot([["id": link.tasks[key]!.taskID, "status": "Completed", "comments": [
+            ["id": "c9", "author": "Me", "text": "✓ Applied \(cardCodes["Refuse files"]!)"]]]])
+        _ = sync(later: 60); try workflowApplies()
+        XCTAssertEqual(sync(later: 120).created, 0, "refused: no new task")
+        _ = Engine.decide(nil, keys: [key], until: nil, by: "tester", reason: "", now: now.addingTimeInterval(180), register: &register)
+        let again = sync(later: 240)
+        XCTAssertEqual(again.created, 1)
+        XCTAssertEqual(try inbox().last?["title"] as? String, "Decide: files (MCP server)")
+    }
 }

@@ -1,6 +1,6 @@
 {
   "name": "opticensus",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Every AI on your Mac, counted: apps, model servers, MCP servers, plugins, hooks and pre-approved actions, with your decision beside each. Uses the WorkFlow app as its console.",
   "bin": { "opticensus": "bin/opticensus" },
   "files": ["bin/opticensus", "README.md", "LICENSE"],

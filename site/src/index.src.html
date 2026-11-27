@@ -262,9 +262,12 @@ footer a { color: #fff; }
     <div class="wrap split">
       <div>
         <h2>WorkFlow is its console</h2>
-        <p>Link OptiCensus to <a href="https://www.opticell-limited.com/workflow">WorkFlow</a>, our task manager for Mac, iPhone and iPad, and every entry that needs you becomes a task in an OptiCensus project.</p>
+        <p>Link OptiCensus to <a href="https://www.opticell-limited.com/workflow" target="_top">WorkFlow</a>, our task manager for Mac, iPhone and iPad, and every entry that needs you becomes a task in an OptiCensus project.</p>
         <p>Answer it wherever you are. Each task has an <strong>Allow</strong> and a <strong>Refuse</strong> card: tap Apply on one and the task closes. Or reply with a reason, like "allow, we use it for client work". The next scan records your decision and says so on the task. If something you allowed changes, a new task asks again. If a model server opens up to the network, its task is marked high priority.</p>
         <p class="fine">One command links them: <code>opticensus workflow connect</code>. It uses WorkFlow's Agent Bridge, so there is nothing else to install.</p>
+        <div class="actions">
+          <a class="button" href="https://www.opticell-limited.com/workflow" target="_top">Get WorkFlow</a>
+        </div>
       </div>
       <div class="tile" aria-label="A sample task in WorkFlow">
         <p class="fine">OptiCensus project</p>
@@ -299,7 +302,7 @@ opticensus schedule install
 opticensus export --csv -o ai-register.csv</pre>
         <p class="fine">The npm package is the compiled tool and nothing else: no install script, nothing fetched at install time. Run <code>opticensus reads</code> for the full list of what it reads. The hourly scan is removed with <code>opticensus schedule uninstall</code>.</p>
         <div class="actions">
-          <a class="button quiet" data-repo hidden href="#">See the code on GitHub</a>
+          <a class="button quiet" data-repo hidden href="#" target="_blank" rel="noopener">See the code on GitHub</a>
         </div>
       </div>
       <div class="tile">
@@ -318,7 +321,7 @@ swift build -c release</pre>
 
 <footer>
   <div class="wrap">
-    <span>OptiCensus 0.1 by Opticell Limited. Free and open source, for macOS.</span>
+    <span>OptiCensus 0.1 by Opticell Limited. Free and open source, for macOS. Works with <a href="https://www.opticell-limited.com/workflow" target="_top">WorkFlow</a>.</span>
     <span data-contact></span>
   </div>
 </footer>
